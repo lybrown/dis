@@ -342,7 +342,15 @@ sub showmodes {
     die map "$_\n", sort @uniq;
 }
 
-sub usage { die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* -l files...\n"; }
+sub usage {
+    die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* [-o XXXX] -l files...\n",
+        "  -e XXXX   Entry point(s)\n",
+        "  -d XXXX   Data location(s) (Disallow tracing as code)\n",
+        "  -v XXXX   Vector(s), e.g. FFFA\n",
+        "  -o XXXX   Origin\n",
+        "  -l        Print labels\n",
+        ;
+}
 
 sub main {
     my %opts;
@@ -350,6 +358,7 @@ sub main {
         entry|e=s@
         data|d=s@
         vector|v=s@
+        org|o=s
         labels|l!
         modes!
         help|h!
@@ -363,6 +372,8 @@ sub main {
 
     my $mem = join "", <>;
     my @mem = map [ord $_], split //, $mem;
+    my $org = hex($opts{org}||0);
+    unshift @mem, ([0,0])x$org if $org;
     my %data;
     for my $data (@{$opts{data}}) {
         $data = hex($data);
@@ -384,7 +395,7 @@ sub main {
         }
     }
     my %entries = map { hex($_) => 1 } @{$opts{entry}};
-    for (my $i = 0; $i < @mem; ++$i) {
+    for (my $i = $org; $i < @mem; ++$i) {
         if ($opts{labels}) {
             printf "l%04X", $i;
         }
