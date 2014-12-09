@@ -342,6 +342,8 @@ sub showmodes {
     die map "$_\n", sort @uniq;
 }
 
+sub usage { die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* -l files...\n"; }
+
 sub main {
     my %opts;
     GetOptions(\%opts, qw{
@@ -350,7 +352,11 @@ sub main {
         vector|v=s@
         labels|l!
         modes!
-    });
+        help|h!
+    }) or usage();
+
+    usage() if $opts{help};
+    usage() if not @ARGV and -t STDOUT;
 
     init();
     showmodes() if $opts{modes};
