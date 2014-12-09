@@ -76,7 +76,7 @@ Std Mnemonic Hex Value Description                Addressing Mode  Bytes/Time
     SRE      $43       M <- (M >> 1) \-/ A        (Ind,X)          2/8  
     NOP      $44       [no operation]             (Z-Page)         2/3
 *   EOR      $45       A <- (A) \-/ M             (Z-Page)         2/3
-*   LSR      $46       C <- A0, A <- (A) >> 1     (Absolute,X)     3/7 ;According to AR Monitor and Grahams Table this should be LSR ZP instead of LSR $ffff,x
+*   LSR      $46       C <- A0, A <- (A) >> 1     (Z-Page)         2/5
     SRE      $47       M <- (M >> 1) \-/ A        (Z-Page)         2/5
 *   PHA      $48       Stack <- (A)               (Implied)        1/3
 *   EOR      $49       A <- (A) \-/ M             (Immediate)      2/2
@@ -308,7 +308,7 @@ sub trace {
     warn sprintf "TRACING: %X\n", $entry;
     for (my $i = $entry;;) {
         return if not exists $mem->[$i];
-        return if $mem->[$i][1];
+        return if defined $mem->[$i][1];
         my $code = $mem->[$i][0];
         $mem->[$i][1] = $len[$code];
         if ($mn[$code] eq "rts") {
@@ -346,7 +346,9 @@ sub main {
     my %opts;
     GetOptions(\%opts, qw{
         entry|e=s@
+        data|d=s@
         vector|v=s@
+        labels|l!
         modes!
     });
 
@@ -355,6 +357,13 @@ sub main {
 
     my $mem = join "", <>;
     my @mem = map [ord $_], split //, $mem;
+    my %data;
+    for my $data (@{$opts{data}}) {
+        $data = hex($data);
+        warn sprintf "DATA: %X\n", $data;
+        $mem[$data][1] = 0;
+        $data{$data} = 1;
+    }
     for my $entry (@{$opts{entry}}) {
         trace(\@mem, hex($entry));
     }
@@ -370,8 +379,11 @@ sub main {
     }
     my %entries = map { hex($_) => 1 } @{$opts{entry}};
     for (my $i = 0; $i < @mem; ++$i) {
+        if ($opts{labels}) {
+            printf "l%04X", $i;
+        }
         if (my $len = $mem[$i][1]) {
-            print "    $mn[$mem[$i][0]]";
+            printf "    $mn[$mem[$i][0]]";
             my $mode = $mode[$mem[$i][0]];
             my $imm8 = $mem[$i+1][0];
             my $imm16 = $imm8 + ($mem[$i+2][0]<<8);
@@ -398,8 +410,10 @@ sub main {
             print "\n";
             $i += $len - 1;
         } else {
-            printf "    dta \$%X\t\t; %04X: %02X\n",
+            printf "    dta \$%X\t\t; %04X: %02X",
                 $mem[$i][0], $i, $mem[$i][0];
+            print " <--- Data" if $data{$i};
+            print "\n";
         }
     }
 }
