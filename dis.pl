@@ -1,9 +1,15 @@
 #!/usr/bin/perl
-# vim: :
+# Copyright (C) 2014 Lyren Brown
 use strict;
 use warnings;
 use Getopt::Long;
 
+# Opcode table taken from C= Hacking Issue 1
+# http://www.ffd2.com/fridge/chacking/
+# http://codebase64.org/doku.php?id=magazines:chacking1#opcodes_and_quasi-opcodes
+# Changes:
+# - Corrected opcode $46
+# - Added missing opcode $5E
 my $spec = q{
 Std Mnemonic Hex Value Description                Addressing Mode  Bytes/Time 
 *   BRK      $00       Stack <- PC, PC <- ($fffe) (Immediate)      1/7
@@ -282,14 +288,17 @@ Compiled by Craig Taylor (duck@pembvax1.pembroke.edu)
 my @mn;
 my @mode;
 my @len;
+my @illegal;
 
 sub init {
+    my ($illegal) = @_;
     my @lines = split /\n/, $spec;
     for (@lines) {
         /(.) {3}(\w{3}) {6}\$(..) {7}(.{27})\((.*)\) *(\d)\/(.*)/ or next;
         my ($std, $mn, $hex, $oper, $mode, $len, $cycles) =
             ($1,$2,$3,$4,$5,$6,$7);
         my $code = hex($hex);
+        $illegal[$code] = $std eq "*" ? 0 : 1 if not $illegal;
         $mn[$code] = lc $mn;
         $mode[$code] = $mode;
         $len[$code] = $len;
@@ -304,10 +313,19 @@ sub rel {
 }
 
 sub trace {
-    my ($mem, $entry) = @_;
+    my ($mem, $entry, $caller) = @_;
     warn sprintf "TRACING: %X\n", $entry;
+    if (exists $mem->[$entry]) {
+        $mem->[$entry][2] = sprintf "l%04X", $entry;
+        if (defined $caller) {
+            $mem->[$caller][3] = $mem->[$entry][2];
+            push @{$mem->[$entry][4]}, $caller;
+        }
+    }
     for (my $i = $entry;;) {
         return if not exists $mem->[$i];
+        return if not $mem->[$i][0]; # Ignore BRK
+        return if $illegal[$mem->[$i][0]]; # Ignore illegal opcodes
         return if defined $mem->[$i][1];
         my $code = $mem->[$i][0];
         $mem->[$i][1] = $len[$code];
@@ -316,20 +334,21 @@ sub trace {
         } elsif ($mn[$code] eq "rti") {
             last;
         } elsif ($mn[$code] eq "jmp") {
+            my $targ;
             if ($mode[$code] eq "Indirect") {
-                $i = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
-                $i = $mem->[$i][0] + ($mem->[$i+1][0]<<8);
+                $targ = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
+                $targ = $mem->[$targ][0] + ($mem->[$targ+1][0]<<8);
             } else {
-                $i = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
+                $targ = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
             }
-            trace($mem, $i);
+            trace($mem, $targ, $i);
             last;
         } elsif ($mn[$code] eq "jsr") {
             my $sub = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
-            trace($mem, $sub);
+            trace($mem, $sub, $i);
         } elsif ($mn[$code] =~ /^b(ne|eq|pl|mi|cc|cs|vs|vc)/) {
             my $rel = rel($mem, $i);
-            trace($mem, $rel);
+            trace($mem, $rel, $i);
         }
         $i += $len[$code];
     }
@@ -343,12 +362,13 @@ sub showmodes {
 }
 
 sub usage {
-    die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* [-o XXXX] -l files...\n",
+    die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* [-o XXXX] -l -i file...\n",
         "  -e XXXX   Entry point(s)\n",
         "  -d XXXX   Data location(s) (Disallow tracing as code)\n",
         "  -v XXXX   Vector(s), e.g. FFFA\n",
         "  -o XXXX   Origin\n",
-        "  -l        Print labels\n",
+        "  -l        Create labels\n",
+        "  -i        Emit illegal opcodes\n",
         ;
 }
 
@@ -360,6 +380,7 @@ sub main {
         vector|v=s@
         org|o=s
         labels|l!
+        illegal|i!
         modes!
         help|h!
     }) or usage();
@@ -367,7 +388,7 @@ sub main {
     usage() if $opts{help};
     usage() if not @ARGV and -t STDOUT;
 
-    init();
+    init($opts{illegal});
     showmodes() if $opts{modes};
 
     my $mem = join "", <>;
@@ -396,17 +417,25 @@ sub main {
     }
     my %entries = map { hex($_) => 1 } @{$opts{entry}};
     for (my $i = $org; $i < @mem; ++$i) {
-        if ($opts{labels}) {
-            printf "l%04X", $i;
+        if ($opts{labels} and $mem[$i][2]) {
+            print "$mem[$i][2]";
+            if ($mem[$i][4]) {
+                print "\t\t\t; Callers:";
+                printf " %04X", $_ for @{$mem[$i][4]};
+            }
+            print "\n";
         }
         if (my $len = $mem[$i][1]) {
             printf "    $mn[$mem[$i][0]]";
             my $mode = $mode[$mem[$i][0]];
             my $imm8 = $mem[$i+1][0];
             my $imm16 = $imm8 + ($mem[$i+2][0]<<8);
+            my $ab = $imm16>>8 ? "" : "a:";
             my $rel = rel(\@mem, $i);
             $_ = sprintf "\$%02X", $_ for $imm8;
             $_ = sprintf "\$%04X", $_ for $imm16, $rel;
+            $imm16 = $rel = $mem[$i][3]
+                if $opts{labels} and $mem[$i][3] and $mode ne "Indirect";
             print " @" if $mode eq "Accumulator";
             print " #$imm8" if $mode eq "Immediate";
             print " ($imm8),y" if $mode eq "(Ind),Y";
@@ -414,9 +443,9 @@ sub main {
             print " $imm8" if $mode eq "Z-Page";
             print " $imm8,x" if $mode eq "Z-Page,X";
             print " $imm8,y" if $mode eq "Z-Page,Y";
-            print " $imm16" if $mode eq "Absolute";
-            print " $imm16,x" if $mode eq "Absolute,X";
-            print " $imm16,y" if $mode eq "Absolute,Y";
+            print " $ab$imm16" if $mode eq "Absolute";
+            print " $ab$imm16,x" if $mode eq "Absolute,X";
+            print " $ab$imm16,y" if $mode eq "Absolute,Y";
             print " ($imm16)" if $mode eq "Indirect";
             print " $rel" if $mode eq "Relative";
             print "    " if $mode eq "Implied";
@@ -425,6 +454,16 @@ sub main {
             print " <--- Entry" if $entries{$i};
             printf " <--- Vector %X", $vectors{$i} if defined $vectors{$i};
             print "\n";
+            for (my $a = $i+1; $a < $i+$len; ++$a) {
+                if ($opts{labels} and $mem[$a][2]) {
+                    print "$mem[$a][2] equ *", ($a-$i-$len);
+                    if ($mem[$a][4]) {
+                        print "\t\t; Callers:";
+                        printf " %04X", $_ for @{$mem[$a][4]};
+                    }
+                    print "\n";
+                }
+            }
             $i += $len - 1;
         } else {
             printf "    dta \$%X\t\t; %04X: %02X",
