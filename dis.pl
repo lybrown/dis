@@ -285,6 +285,9 @@ Sources:
 Compiled by Craig Taylor (duck@pembvax1.pembroke.edu)
 };
 
+my $verbose = 0;
+sub info { $verbose and warn @_; }
+
 my @mn;
 my @mode;
 my @len;
@@ -313,10 +316,11 @@ sub rel {
 }
 
 sub trace {
-    my ($mem, $entry, $caller) = @_;
-    warn sprintf "TRACING: %X\n", $entry;
+    my ($mem, $entry, $segnum, $caller) = @_;
+    #info(sprintf "TRACING: %X\n", $entry);
     if (exists $mem->[$entry]) {
-        $mem->[$entry][2] = sprintf "l%04X", $entry;
+        my $pre = $segnum ? sprintf "s%X", $segnum : "";
+        $mem->[$entry][2] = $pre . sprintf "l%04X", $entry;
         if (defined $caller) {
             $mem->[$caller][3] = $mem->[$entry][2];
             push @{$mem->[$entry][4]}, $caller;
@@ -341,14 +345,14 @@ sub trace {
             } else {
                 $targ = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
             }
-            trace($mem, $targ, $i);
+            trace($mem, $targ, $segnum, $i);
             last;
         } elsif ($mn[$code] eq "jsr") {
             my $sub = $mem->[$i+1][0] + ($mem->[$i+2][0]<<8);
-            trace($mem, $sub, $i);
+            trace($mem, $sub, $segnum, $i);
         } elsif ($mn[$code] =~ /^b(ne|eq|pl|mi|cc|cs|vs|vc)/) {
             my $rel = rel($mem, $i);
-            trace($mem, $rel, $i);
+            trace($mem, $rel, $segnum, $i);
         }
         $i += $len[$code];
     }
@@ -361,63 +365,36 @@ sub showmodes {
     die map "$_\n", sort @uniq;
 }
 
-sub usage {
-    die "Usage: dis [-e XXXX]* [-d XXXX]* [-v XXXX]* [-o XXXX] -l -i file...\n",
-        "  -e XXXX   Entry point(s)\n",
-        "  -d XXXX   Data location(s) (Disallow tracing as code)\n",
-        "  -v XXXX   Vector(s), e.g. FFFA\n",
-        "  -o XXXX   Origin\n",
-        "  -l        Create labels\n",
-        "  -i        Emit illegal opcodes\n",
-        ;
-}
-
-sub main {
-    my %opts;
-    GetOptions(\%opts, qw{
-        entry|e=s@
-        data|d=s@
-        vector|v=s@
-        org|o=s
-        labels|l!
-        illegal|i!
-        modes!
-        help|h!
-    }) or usage();
-
-    usage() if $opts{help};
-    usage() if not @ARGV and -t STDOUT;
-
-    init($opts{illegal});
-    showmodes() if $opts{modes};
-
-    my $mem = join "", <>;
+sub dis {
+    my ($mem, $opts) = @_;
     my @mem = map [ord $_], split //, $mem;
-    my $org = hex($opts{org}||0);
+    my $org = hex($opts->{org}||0);
     unshift @mem, ([0,0])x$org if $org;
+    my $end = scalar @mem;
+    push @mem, ([0,0])x(0x10002-$end) if $end < 0x10002;
     my %data;
-    for my $data (@{$opts{data}}) {
+    for my $data (@{$opts->{data}}) {
         $data = hex($data);
-        warn sprintf "DATA: %X\n", $data;
+        info(sprintf "DATA: %X\n", $data);
         $mem[$data][1] = 0;
         $data{$data} = 1;
     }
-    for my $entry (@{$opts{entry}}) {
-        trace(\@mem, hex($entry));
+    for my $entry (@{$opts->{entry}}) {
+        trace(\@mem, hex($entry), $opts->{segnum});
     }
     my %vectors;
-    for my $vector (@{$opts{vector}}) {
+    for my $vector (@{$opts->{vector}}) {
         $vector = hex($vector);
         if (exists $mem[$vector] and exists $mem[$vector+1]) {
-            warn sprintf "VECTOR: %04X\n", $vector;
+            info(sprintf "VECTOR: %04X\n", $vector);
             my $targ = $mem[$vector][0] + ($mem[$vector+1][0]<<8);
             $vectors{$targ} = $vector;
-            trace(\@mem, $targ);
+            trace(\@mem, $targ, $opts->{segnum});
         }
     }
-    my %entries = map { hex($_) => 1 } @{$opts{entry}};
-    for (my $i = $org; $i < @mem; ++$i) {
-        if ($opts{labels} and $mem[$i][2]) {
+    my %entries = map { hex($_) => 1 } @{$opts->{entry}};
+    for (my $i = $org; $i < $end; ++$i) {
+        if ($opts->{labels} and $mem[$i][2]) {
             print "$mem[$i][2]";
             if ($mem[$i][4]) {
                 print "\t\t\t; Callers:";
@@ -425,17 +402,21 @@ sub main {
             }
             print "\n";
         }
-        if (my $len = $mem[$i][1]) {
+        my $len = $mem[$i][1];
+        if ($len and $i + $len - 1 < $end) {
             printf "    $mn[$mem[$i][0]]";
             my $mode = $mode[$mem[$i][0]];
             my $imm8 = $mem[$i+1][0];
             my $imm16 = $imm8 + ($mem[$i+2][0]<<8);
             my $ab = $imm16>>8 ? "" : "a:";
             my $rel = rel(\@mem, $i);
+            my $inbounds = $imm16 >= $org && $imm16 < $end - 1;
             $_ = sprintf "\$%02X", $_ for $imm8;
             $_ = sprintf "\$%04X", $_ for $imm16, $rel;
             $imm16 = $rel = $mem[$i][3]
-                if $opts{labels} and $mem[$i][3] and $mode ne "Indirect";
+                if $opts->{labels} and $mem[$i][3]
+                and $mode ne "Indirect"
+                and $inbounds;
             print " @" if $mode eq "Accumulator";
             print " #$imm8" if $mode eq "Immediate";
             print " ($imm8),y" if $mode eq "(Ind),Y";
@@ -455,7 +436,7 @@ sub main {
             printf " <--- Vector %X", $vectors{$i} if defined $vectors{$i};
             print "\n";
             for (my $a = $i+1; $a < $i+$len; ++$a) {
-                if ($opts{labels} and $mem[$a][2]) {
+                if ($opts->{labels} and $mem[$a][2]) {
                     print "$mem[$a][2] equ *", ($a-$i-$len);
                     if ($mem[$a][4]) {
                         print "\t\t; Callers:";
@@ -472,6 +453,142 @@ sub main {
             print "\n";
         }
     }
+}
+
+sub usage {
+    die "Usage: dis [options] file...\n",
+        "  -e XXXX   Entry point(s)\n",
+        "  -d XXXX   Data location(s) - Disallow tracing as code\n",
+        "  -v XXXX   Vector(s), e.g. FFFA\n",
+        "  -o XXXX   Origin\n",
+        "  -l        Create labels\n",
+        "  -i        Emit illegal opcodes\n",
+        "  -x        Disassemble as Atari XEX file\n",
+        "  -p        Disassemble as Commodore 64 PRG file\n",
+        "  -verbose  Print info to STDERR\n",
+        ;
+}
+
+sub word {
+    my ($mem, $i) = @_;
+    $i + 2 < length $mem or die "ERROR: File is corrupted\n";
+    return unpack "v", substr $mem, $i, 2;
+}
+
+sub xex {
+    my ($mem, $opts) = @_;
+    my @segments;
+    my $run;
+    for (my $i = 0; $i < length $mem;) {
+        my $start = word($mem, $i);
+        $i += 2;
+        my $ffff = $start == 0xFFFF;
+        if ($ffff) {
+            $start = word($mem, $i);
+            $i += 2;
+        }
+        my $end = word($mem, $i);
+        $i += 2;
+        my $len = $end - $start + 1;
+        info(sprintf "START: %X END: %X\n", $start, $end);
+        die "ERROR: Segment length is negative: $i, $len\n" if $len < 0;
+        die "ERROR: Segment is past EOF: $i, $len\n" if $len >= length $mem;
+        my $data = substr $mem, $i, $len;
+        $i += $len;
+        if ($start == 0x2E0) {
+            $run = unpack "v", $data;
+        } elsif ($start == 0x2E2) {
+            my $ini = unpack "v", $data;
+            for my $segment (@segments) {
+                if ($ini >= $segment->[0] and $ini <= $segment->[1]) {
+                    info(sprintf "INI: %X\n", $ini);
+                    push @{$segment->[3]}, sprintf "%X", $ini;
+                    last;
+                }
+            }
+        }
+        unshift @segments, [$start, $end, $data, [], $ffff];
+    }
+    if (defined $run) {
+        for my $segment (@segments) {
+            if ($run >= $segment->[0] and $run <= $segment->[1]) {
+                info(sprintf "RUN: %X\n", $run);
+                push @{$segment->[3]}, sprintf "%X", $run;
+                last;
+            }
+        }
+    }
+    my $segnum = 1;
+    for my $segment (reverse @segments) {
+        my ($start, $end, $data, $entries, $ffff) = @$segment;
+        if ($ffff and $segnum > 1) {
+            printf "    opt h-\n";
+            printf "    dta a(\$FFFF)\t; Segment header\n";
+            printf "    opt h+\n";
+        }
+        if ($start == 0x2E0 and $end == 0x2E1) {
+            printf "    run \$%04X\n", unpack "v", $data;
+        } elsif ($start == 0x2E2 and $end == 0x2E3) {
+            printf "    ini \$%04X\n", unpack "v", $data;
+        } else {
+            printf "    org \$%04X\t\t; end %04X\n", $start, $end;
+            delete $opts->{entry};
+            $opts->{entry} = $entries if $entries;
+            $opts->{org} = sprintf "%X", $start;
+            $opts->{segnum} = $segnum++;
+            dis($data, $opts);
+        }
+    }
+}
+
+sub prg {
+    my ($mem, $opts) = @_;
+    my $start = unpack "v", substr $mem, 0, 2;
+    if ($mem =~ /^......\x9E *(\d+)/) {
+        push @{$opts->{entry}}, sprintf "%X", $1;
+    }
+    printf "    opt h-\n";
+    printf "    org \$%04X\n", $start-2;
+    printf "    dta a(\$%04X)\t; PRG Header\n", $start;
+    $opts->{org} = sprintf "%X", $start;
+    dis(substr($mem, 2), $opts);
+}
+
+sub main {
+    my %opts;
+    GetOptions(\%opts, qw{
+        entry|e=s@
+        data|d=s@
+        vector|v=s@
+        org|o=s
+        labels|l!
+        illegal|i!
+        modes!
+        help|h!
+        xex|x!
+        prg|p!
+        verbose!
+    }) or usage();
+
+    usage() if $opts{help};
+    usage() if not @ARGV and -t STDOUT;
+
+    init($opts{illegal});
+    showmodes() if $opts{modes};
+
+    $verbose = $opts{verbose};
+    my $mem = join "", <>;
+
+    if ($opts{xex}) {
+        xex($mem, \%opts);
+    } elsif ($opts{prg}) {
+        prg($mem, \%opts);
+    } else {
+        printf "    opt h-\n";
+        printf "    org \$%04X\n", $opts{org}||0;
+        dis($mem, \%opts);
+    }
+    info("DONE\n");
 }
 
 main();
