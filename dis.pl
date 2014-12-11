@@ -520,6 +520,7 @@ sub xex {
             }
         }
     }
+    my $global = $opts->{entry};
     my $segnum = 1;
     for my $segment (reverse @segments) {
         my ($start, $end, $data, $entries, $ffff) = @$segment;
@@ -535,10 +536,11 @@ sub xex {
         } else {
             printf "    org \$%04X\t\t; end %04X\n", $start, $end;
             delete $opts->{entry};
-            $opts->{entry} = $entries if $entries;
+            $opts->{entry} = [@{$global||[]}, @{$entries||[]}];
             $opts->{org} = sprintf "%X", $start;
             $opts->{segnum} = $segnum++;
             dis($data, $opts);
+            $opts->{entry} = $global;
         }
     }
 }
