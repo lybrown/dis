@@ -410,13 +410,15 @@ sub dis {
             my $imm16 = $imm8 + ($mem[$i+2][0]<<8);
             my $ab = $imm16>>8 ? "" : "a:";
             my $rel = rel(\@mem, $i);
-            my $inbounds = $imm16 >= $org && $imm16 < $end - 1;
-            $_ = sprintf "\$%02X", $_ for $imm8;
-            $_ = sprintf "\$%04X", $_ for $imm16, $rel;
-            $imm16 = $rel = $mem[$i][3]
-                if $opts->{labels} and $mem[$i][3]
-                and $mode ne "Indirect"
-                and $inbounds;
+            my $uselabel = $opts->{labels} && defined $mem[$i][3]
+                && ($mode eq "Relative" and $rel >= $org && $rel < $end
+                    or $mode eq "Absolute" and $imm16 > $org && $imm16 < $end);
+            if ($uselabel) {
+                $imm16 = $rel = $mem[$i][3];
+            } else {
+                $_ = sprintf "\$%02X", $_ for $imm8;
+                $_ = sprintf "\$%04X", $_ for $imm16, $rel;
+            }
             print " @" if $mode eq "Accumulator";
             print " #$imm8" if $mode eq "Immediate";
             print " ($imm8),y" if $mode eq "(Ind),Y";

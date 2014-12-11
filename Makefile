@@ -1,6 +1,6 @@
 testl:
-	make l=-l test
 	make test
+	make l=-l test
 
 test:
 	./dis.pl -x $(l) ransack.xex > r.asm
