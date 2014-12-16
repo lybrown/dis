@@ -589,7 +589,7 @@ sub main {
         prg($mem, \%opts);
     } else {
         printf "    opt h-\n";
-        printf "    org \$%04X\n", $opts{org}||0;
+        printf "    org \$%04X\n", hex($opts{org}||0);
         dis($mem, \%opts);
     }
     info("DONE\n");
