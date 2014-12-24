@@ -477,6 +477,16 @@ sub word {
     return unpack "v", substr $mem, $i, 2;
 }
 
+sub runini($$$) {
+    my ($cmd, $data, $ffff) = @_;
+    if ($ffff) {
+        printf "    opt h-\n";
+        printf "    dta a(\$FFFF)\t; Segment header\n";
+        printf "    opt h+\n";
+    }
+    printf "    %s \$%04X\n", $cmd, unpack "v", $data;
+}
+
 sub xex {
     my ($mem, $opts) = @_;
     my @segments;
@@ -524,17 +534,13 @@ sub xex {
     my $segnum = 1;
     for my $segment (reverse @segments) {
         my ($start, $end, $data, $entries, $ffff) = @$segment;
-        if ($ffff and $segnum > 1) {
-            printf "    opt h-\n";
-            printf "    dta a(\$FFFF)\t; Segment header\n";
-            printf "    opt h+\n";
-        }
+        $ffff = 0 if $segnum == 1;
         if ($start == 0x2E0 and $end == 0x2E1) {
-            printf "    run \$%04X\n", unpack "v", $data;
+            runini("run", $data, $ffff);
         } elsif ($start == 0x2E2 and $end == 0x2E3) {
-            printf "    ini \$%04X\n", unpack "v", $data;
+            runini("ini", $data, $ffff);
         } else {
-            printf "    org \$%04X\t\t; end %04X\n", $start, $end;
+            printf "    org %s\$%04X\t\t; end %04X\n", $ffff ? "f:" : "", $start, $end;
             delete $opts->{entry};
             $opts->{entry} = [@{$global||[]}, @{$entries||[]}];
             $opts->{org} = sprintf "%X", $start;
