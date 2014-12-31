@@ -554,7 +554,7 @@ sub xex {
 sub prg {
     my ($mem, $opts) = @_;
     my $start = unpack "v", substr $mem, 0, 2;
-    if ($mem =~ /^......\x9E *(\d+)/) {
+    if ($mem =~ /^......\x9E *(\d+)/s) {
         push @{$opts->{entry}}, sprintf "%X", $1;
     }
     printf "    opt h-\n";
