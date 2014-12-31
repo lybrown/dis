@@ -588,7 +588,11 @@ sub main {
     showmodes() if $opts{modes};
 
     $verbose = $opts{verbose};
-    my $mem = join "", <>;
+    my $mem;
+    {
+        local $/; # slurp whole files
+        $mem = join "", <>;
+    }
 
     if ($opts{xex}) {
         xex($mem, \%opts);
