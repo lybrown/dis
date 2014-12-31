@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Getopt::Long;
+use open IN => ':raw'; # binary mode
 
 # Opcode table taken from C= Hacking Issue 1
 # http://www.ffd2.com/fridge/chacking/
