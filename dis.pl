@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Getopt::Long;
+use open IN => ':raw'; # binary mode
 
 # Opcode table taken from C= Hacking Issue 1
 # http://www.ffd2.com/fridge/chacking/
@@ -554,7 +555,7 @@ sub xex {
 sub prg {
     my ($mem, $opts) = @_;
     my $start = unpack "v", substr $mem, 0, 2;
-    if ($mem =~ /^......\x9E *(\d+)/) {
+    if ($mem =~ /^......\x9E *(\d+)/s) {
         push @{$opts->{entry}}, sprintf "%X", $1;
     }
     printf "    opt h-\n";
@@ -587,7 +588,11 @@ sub main {
     showmodes() if $opts{modes};
 
     $verbose = $opts{verbose};
-    my $mem = join "", <>;
+    my $mem;
+    {
+        local $/; # slurp whole files
+        $mem = join "", <>;
+    }
 
     if ($opts{xex}) {
         xex($mem, \%opts);
