@@ -1,6 +1,8 @@
+SHELL=/bin/bash
+
 testl:
-	make test
-	make l=-l test
+	time make test
+	time make l=-l test
 
 test:
 	./dis.pl -x $(l) ransack.xex > r.asm
@@ -9,7 +11,9 @@ test:
 	./dis.pl -p $(l) daah_those_acid_pills.prg > daah.asm
 	xasm daah.asm
 	cmp daah_those_acid_pills.prg daah.obx
-	./dis.pl -e 1000 -e 9006 -v FFFE -d 9101 $(l) game.mem > g.asm
+	./dis.pl -c 1000 -c 9006 -v FFFE -d 9101 $(l) game.mem > g.asm
 	xasm g.asm
 	cmp game.mem g.obx
 	@echo "PASS"
+
+.PHONY: testl test
