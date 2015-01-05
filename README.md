@@ -64,9 +64,9 @@ Disassemble Commodore 64 PRG file with labels and an additional entry point:
 
     dis -p -l -e 1000 game.prg > game.asm
 
-Disassemble Atari SAP file with option file:
+Disassemble Atari SAP file with option files:
 
-    dis -t sap -l -a hardware.dop A-Type.sap > A_Type.asm
+    dis -t sap -l -a hardware.dop -a sys.dop A_Type.sap > A_Type.asm
 
 AtariAge Thread
 ---------------

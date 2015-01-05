@@ -166,15 +166,16 @@ sub trace {
                 $targ = addr($i1, $i2);
                 push @{$mem->[$targ][ACCESSORS]}, sprintf "%04X", $i;
                 my ($lo, $hi) = map $mem->[$_][VALUE], $targ, $targ+1;
-                if (not defined $lo or not defined $hi) {
+                if (defined $lo and defined $hi) {
+                    $targ = addr($lo, $hi);
+                } else {
                     warn "WARNING: Indirect JMP references undefined ",
                         "memory at ", loc($state, $i), "\n";
                 }
-                $targ = addr($lo, $hi);
             } else {
                 $targ = addr($i1, $i2);
             }
-            trace($state, $targ, $byte->[LABEL], $i);
+            trace($state, $targ, $byte->[LABEL], $i) if defined $targ;
             last;
         } elsif ($mn[$code] eq "jsr") {
             my $targ = addr($i1, $i2);
@@ -208,8 +209,13 @@ sub extern {
                 next if $opts->{labelled}{$label};
                 next if not $opts->{referenced}{$label};
                 next if $label =~ /\+/;
-                push @labels,
-                    [$addr, sprintf "$labels->{$addr} equ \$%X\n", $addr];
+                my $accessors = $state->{mem}[$addr][ACCESSORS];
+                my $access = "";
+                if ($accessors and $opts->{access}) {
+                    $access = "\t\t; " . join " ", "Access:", @$accessors;
+                }
+                push @labels, [$addr,
+                    sprintf "$labels->{$addr} equ \$%X$access\n", $addr];
             }
         }
     }
@@ -379,8 +385,9 @@ sub xex {
         my $len = $end - $start + 1;
         info(sprintf "START: %X END: %X\n", $start, $end);
         die "ERROR: Segment length is negative: $i, $len\n" if $len < 0;
-        die "ERROR: Segment past EOF: $i, $len\n" if $i+$len > length $stream;
+        warn "WARNING: Segment past EOF: $i, $len\n" if $i+$len > length $stream;
         my $data = substr $stream, $i, $len;
+        $end = $start + (length $data) - 1;
         $i += $len;
         layer($state, $start, $end, $data);
         label($state);
@@ -397,6 +404,7 @@ sub xex {
         push @segments, [$start, $end, $data, copy($state), $ffff];
     }
     trace($state, $run, $run_caller) if defined $run;
+    trace($state, $segments[0][0], "COM") if @segments == 1;
     $state->{segnum} = 0;
     enter($state);
     for my $segment (@segments) {
