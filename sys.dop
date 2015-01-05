@@ -1,0 +1,421 @@
+;<HESS.ATARI>SYSMAC.SML.27  8-Mar-82 08:39:38, Edit by HESS
+
+;6502 SYSTEM -*-MACRO-*- DEFINITIONS
+
+; ***** ATARI SYSTEM DEFS *****
+
+;       VECTOR TABLE
+
+vector EDITRV=$E400                  ;EDITOR
+vector SCRENV=$E410                  ;TELEVISION SCREEN
+vector KEYBDV=$E420                  ;KEYBOARD
+vector PRINTV=$E430                  ;PRINTER
+vector CASETV=$E440                  ;CASSETTE
+
+;       JUMP VECTOR TABLE
+
+code DISKIV=$E450                  ;DISK INITIALIZATION
+code DSKINV=$E453                  ;DISK INTERFACE
+code CIOV=$E456                  ;CIO ROUTINE
+code SIOV=$E459                  ;SIO ROUTINE
+code SETVBV=$E45C                  ;SET VERTICAL BLANK VECTORS
+code SYSVBV=$E45F                  ;SYSTEM VERTICAL BLANK ROUTINE
+code XITVBV=$E462                  ;EXIT VERTICAL BLANK ROUTINE
+code SIOINV=$E465                  ;SIO INIT
+code SENDEV=$E468                  ;SEND ENABLE ROUTINE
+code INTINV=$E46B                  ;INTERRUPT HANDLER INIT
+code CIOINV=$E46E                  ;CIO INIT
+code BLKBDV=$E471                  ;BLACKBOARD MODE
+code WARMSV=$E474                  ;WARM START ENTRY POINT
+code COLDSV=$E477                  ;COLD START ENTRY POINT
+code RBLOKV=$E47A                  ;CASSETTE READ BLOCK VECTOR
+code CSOPIV=$E47D                  ;CASSETTE OPEN VECTOR
+code DSOPIV=$E480                  ;CASSETTE OPEN FOR INPUT VECTOR
+
+;       SOME USEFUL INTERNAL ROUTINES
+
+code KGETCH=$F6E2                  ;GET CHAR FROM KEYBOARD
+code EOUTCH=$F6A4                  ;OUTPUT CHAR TO SCREEN
+code PUTLIN=$F385                  ;OUTPUT LINE TO IOCB#0
+
+;       COMMAND CODES FOR IOCB
+
+;constant OPEN=$03                    ;OPEN FOR INPUT/OUTPUT
+;constant GETREC=$05                    ;GET RECORD (TEXT)
+;constant GETCHR=$07                    ;GET CHARACTER(S)
+;constant PUTREC=$09                    ;PUT RECORD (TEXT)
+;constant PUTCHR=$0B                    ;PUT CHARACTER(S)
+;constant CLOSE=$0C                    ;CLOSE DEVICE
+;constant STATIS=$0D                    ;STATUS REQUEST
+;constant SPECIL=$0E                    ;SPECIAL ENTRY COMMANDS
+
+;       SPECIAL ENTRY COMMANDS
+
+;constant DRAWLN=$11                    ;DRAW LINE
+;constant FILLIN=$12                    ;DRAW LINE WITH RIGHT FILL
+;constant RENAME=$20                    ;RENAME DISK FILE
+;constant DELETE=$21                    ;DELETE DISK FILE
+;constant FORMAT=$22                    ;FORMAT DISK
+;constant LOCKFL=$23                    ;LOCK FILE (READ ONLY)
+;constant UNLOCK=$24                    ;UNLOCK FILE
+;constant POINT=$25                    ;POINT SECTOR
+;constant NOTE1=$26                    ;NOTE SECTOR
+;
+;constant CCIO=$28                    ;CONCURRENT I/O MODE
+;
+;constant IOCFRE=$FF                    ;IOCB "FREE"
+
+;       AUX1 VALUES FOR OPEN
+
+;constant APPEND=$01                    ;OPEN FOR APPEND
+;constant DIRECT=$02                    ;OPEN FOR DIRECTORY ACCESS
+;constant OPNIN=$04                    ;OPEN FOR INPUT
+;constant OPNOT=$08                    ;OPEN FOR OUTPUT
+;;constant OPNINO=OPNIN|OPNOT            ;OPEN FOR INPUT/OUTPUT
+;constant MXDMOD=$10                    ;OPEN FOR MIXED MODE
+;constant INSCLR=$20                    ;OPEN WITHOUT CLEARING SCREEN
+
+; OS STATUS CODES
+
+;constant SUCCES=$01                    ;SUCCESSFUL OPERATION
+;constant BRKABT=$80                    ;(128) BREAK KEY ABORT
+;constant PRVOPN=$81                    ;(129) IOCB ALREADY OPEN
+;constant NONDEV=$82                    ;(130) NON-EX DEVICE
+;constant WRONLY=$83                    ;(131) IOCB OPENED FOR WRITE ONLY
+;constant NVALID=$84                    ;(132) INVALID COMMAND
+;constant NOTOPN=$85                    ;(133) DEVICE OR FILE NOT OPEN
+;constant BADIOC=$86                    ;(134) INVALID IOCB NUMBER
+;constant RDONLY=$87                    ;(135) IOCB OPENED FOR READ ONLY
+;constant EOFERR=$88                    ;(136) END OF FILE
+;constant TRNRCD=$89                    ;(137) TRUNCATED RECORD
+;constant TIMOUT=$8A                    ;(138) DEVICE TIMEOUT
+;constant DNACK=$8B                    ;(139) DEVICE DOES NOT ACK COMMAND
+;constant FRMERR=$8C                    ;(140) SERIAL BUS FRAMING ERROR
+;constant CRSROR=$8D                    ;(141) CURSOR OUT OF RANGE
+;constant OVRRUN=$8E                    ;(142) SERIAL BUS DATA OVERRUN
+;constant CHKERR=$8F                    ;(143) SERIAL BUS CHECKSUM ERROR
+;constant DERROR=$90                    ;(144) DEVICE ERROR (OPERATION INCOMPLETE)
+;constant BADMOD=$91                    ;(145) BAD SCREEN MODE NUMBER
+;constant FNCNOT=$92                    ;(146) FUNCTION NOT IN HANDLER
+;constant SCRMEM=$93                    ;(147) INSUFFICIENT MEMORY FOR SCREEN MODE
+
+;       PAGE 0 LOCATIONS
+
+data LINZBS=$00                    ;LINBUG STORAGE
+ 
+;  THESE LOCS ARE NOT CLEARED
+
+vector CASINI=$02+1                    ;CASSETTE INIT LOC
+data RAMLO=$04+1                    ;RAM POINTER FOR MEM TEST
+data TRAMSZ=$06                    ;TEMP LOC FOR RAM SIZE
+data TSTDAT=$07                    ;RAM TEST DATA LOC
+
+;  CLEARED ON COLDSTART ONLY
+
+data WARMST=$08                    ;WARM START FLAG
+data BOOTQ=$09                    ;SUCCESSFUL BOOT FLAG
+vector DOSVEC=$0A+1                    ;DOS START VECTOR
+vector DOSINI=$0C+1                    ;DOS INIT ADDRESS
+data APPMHI=$0E                    ;APPLICATION MEM HI LIMIT
+
+;  CLEARED ON COLD OR WARM START
+
+data INTZBS=$10                    ; START OF OS RAM CLEAR LOC => $7F
+data POKMSK=$10                    ;SYSTEM MASK FOR POKEY IRQ ENABLE
+data BRKKEY=$11                    ;BREAK KEY FLAG
+data RTCLOK=$12+2                    ;REAL TIME CLOCK (60HZ OR 16.66666 MS)
+data BUFADR=$15+1                    ;INDIRECT BUFFER ADDRESS REG
+data ICCOMT=$17                    ;COMMAND FOR VECTOR HANDLER
+vector DSKFMS=$18+1                    ;DISK FILE MANAGER POINTER
+data DSKUTL=$1A+1                    ;DISK UTILITIES POINTER
+data PTIMOT=$1C                    ;PRINTER TIME OUT REGISTER
+data PBPNT=$1D                    ;PRINT BUFFER POINTER
+data PBUFSZ=$1E                    ;PRINT BUFFER SIZE
+data PTEMP=$1F                    ;TEMP REG
+
+data ZIOCB=$20                    ;PAGE 0 I/O CONTROL BLOCK
+;constant IOCBSZ=16                     ;NUMBER OF BYTES / IOCB
+;data MAXIOC=8*IOCBSZ               ;LENGTH OF IOCB AREA
+;data IOCBAS=ZIOCB
+
+data ICHIDZ=$20                    ;HANDLER INDEX NUMBER ($FF := IOCB FREE)
+data ICDNOZ=$21                    ;DEVICE NUMBER (DRIVE NUMBER)
+data ICCOMZ=$22                    ;COMMAND CODE
+data ICSTAZ=$23                    ;STATUS OF LAST IOCB ACTION
+data ICBALZ=$24                    ;BUFFER ADDRESS (LOW)
+data ICBAHZ=$25                    ;  "       "    (HIGH)
+data ICPTLZ=$26                    ;PUT BYTE ROUTINE ADDRESS - 1
+data ICPTHZ=$27
+data ICBLLZ=$28                    ;BUFFER LENGTH (LOW)
+data ICBLHZ=$29                    ;  "       "   (HIGH)
+data ICAX1Z=$2A                    ;AUX INFO
+data ICAX2Z=$2B
+data ICSPRZ=$2C+3                    ;SPARE BYTES (CIO LOCAL USE)
+;data ICIDNO=ICSPRZ+2               ;IOCB LUMBER * 16
+;data CIOCHR=ICSPRZ+3               ;CHARACTER BYTE FOR CURRENT OPERATION
+
+data STATUS=$30                    ;INTERNAL STATUS STORAGE
+data CHKSUM=$31                    ;CHECKSUM (SINGLE BYTE SUM WITH CARRY)
+data BUNRLO=$32                    ;POINTER TO DATA BUFFER (LO BYTE)
+data BUFRHI=$33                    ;POINTER TO DATA BUFFER (HI BYTE)
+data BFENLO=$34                    ;NEXT BYTE PAST END OF BUFFER (LO BYTE)
+data BNENHI=$35                    ;NEXT BYTE PAST END OF BUFFER (HI BYTE)
+data CRETRY=$36                    ;NUMBER OF COMMAND FRAM RETRIES
+data DRETRY=$37                    ;NUMBER OF DEVICE RETRIES
+data BUFRFL=$38                    ;DATA BUFFER FULL FLAG
+data RECVDN=$39                    ;RECEIVE DONE FLAG
+data XMTDON=$3A                    ;XMIT DONE FLAG
+data CHKSNT=$3B                    ;CHECKSUM SENT FLAG
+data NOCKSM=$3C                    ;NO CHECKSUM FOLLOWS DATA FLAG
+
+data BPTR=$3D                    ;BUFFER POINTER (CASSETTE)
+data FTYPE=$3E                    ;FILE TYPE (SHORT IRG/LONG IRG)
+data FEOF=$3F                    ;END OF FILE FLAG (CASSETTE)
+data FREQ=$40                    ;FREQ COUNTER FOR CONSOLE SPEAKER
+data SOUNDR=$41                    ;NOISY I/O FLAG. (ZERO IS QUIET)
+data CRITIC=$42                    ;CRITICAL CODE IF NON-ZERO)
+
+data FMSZPG=$43+6                    ;DISK FILE MANAGER SYSTEM STORAGE (7 BYTES)
+
+data CKEY=$4A                    ;SET WHEN GAME START PRESSED
+data CASSBT=$4B                    ;CASSETTE BOOT FLAG
+data DSTAT=$4C                    ;DISPLAY STATUS
+data ATRACT=$4D                    ;ATTRACT MODE FLAG
+data DRKMSK=$4E                    ;DARK ATTRACT MASK
+data COLRSH=$4F                    ;ATTRACT COLOR SHIFTER (XOR'D WITH PLAYFIELD)
+
+data TMPCHR=$50                    ;TEMP CHAR STORAGE (DISPLAY HANDLER)
+data HOLD1=$51                    ;TEMP STG (DISPLAY HANDLER)
+data LMARGN=$52                    ;LEFT MARGIN
+data RMARGN=$53                    ;RIGHT MARGIN
+data ROWCRS=$54                    ;CURSOR COUNTERS
+data COLCRS=$55+1
+data DINDEX=$57                    ;DISPLAY INDEX (VARIOUS QUANTS)
+data SAVMSC=$58+1
+data OLDROW=$5A                    ;PREVIOUS ROW/COL
+data OLDCOL=$5B+1
+data OLDCHR=$5D                    ;DATA UNDER CURSOR
+data OLDADR=$5E+1
+data NEWROW=$60                    ;POINT DRAWS TO HERE
+data NEWCOL=$61+1
+data LOGCOL=$63                    ;POINTS AT COLUMN IN LOGICAL LINE
+data ADRESS=$64+1                    ;INDIRECT POINTER
+data MLTTMP=$66+1                    ;MULTIPLY TEMP
+;data OPNTMP=MLTTMP                 ;FIRST BYTE IS USED IN OPEN AS TEMP
+data SAVADR=$68+1
+data RAMTOP=$6A                    ;RAM SIZE DEFINED BY POWER ON LOGIC
+data BUFCNT=$6B                    ;BUFFER COUNT
+data BUFSTR=$6C+1                    ;EDITOR GETCH POINTER
+data BITMSK=$6E                    ;BIT MASK
+data SHFAMT=$6F                    ;OUTCHR SHIFT
+
+data ROWAC=$70+1                    ;USED BY "DRAW"
+data COLAC=$72+1
+data ENDPT=$74+1
+data DELTAR=$76
+data DELTAC=$77+1
+data ROWINC=$79
+data COLINC=$7A
+data SWPFLG=$7B                    ;NON-0 IF TXT AND RAM SWAPPED
+data HOLDCH=$7C                    ;CH BEFORE CNTL & SHFT PROCESSING IN KGETCH
+data INSDAT=$7D                    ;INSERT CHAR SAVE
+data COUNTR=$7E+1                   ;DRAW COUNTER
+
+;;;     $80 TO $FF ARE RESERVED FOR USER APPLICATIONS
+
+;       PAGE 2 LOCATIONS
+
+;data INTABS=$200                   ;INTERRUPT TABLE
+vector VDSLST=$200+1                   ;DISPLAY LIST NMI VECTOR
+vector VPRCED=$202+1                   ;PROCEED LINE IRQ VECTOR
+vector VINTER=$204+1                   ;INTERRUPT LINE IRQ VECTOR
+vector VBREAK=$206+1                   ;"BRK" VECTOR
+vector VKEYBD=$208+1                   ;POKEY KEYBOARD IRQ VECTOR
+vector VSERIN=$20A+1                   ;POKEY SERIAL INPUT READY
+vector VSEROR=$20C+1                   ;POKEY SERIAL OUTPUT READY
+vector VSEROC=$20E+1                   ;POKEY SERIAL OUTPUT DONE
+vector VTIMR1=$210+1                   ;POKEY TIMER 1 IRQ
+vector VTIMR2=$212+1                   ;POKEY TIMER 2 IRQ
+vector VTIMR4=$214+1                   ;POKEY TIMER 4 IRQ (DO NOT USE)
+vector VIMIRQ=$216+1                   ;IMMEDIATE IRQ VECTOR
+vector CDTMV1=$218+1                   ;COUNT DOWN TIMER 1
+vector CDTMV2=$21A+1                   ;COUNT DOWN TIMER 2
+vector CDTMV3=$21C+1                   ;COUNT DOWN TIMER 3
+vector CDTMV4=$21E+1                   ;COUNT DOWN TIMER 4
+vector CDTMV5=$220+1                   ;COUNT DOWN TIMER 5
+vector VVBLKI=$222+1                   ;IMMEDIATE VERTICAL BLANK NMI VECTOR
+vector VVBLKD=$224+1                   ;DEFERRED VERTICAL BLANK NMI VECTOR
+vector CDTMA1=$226+1                   ;COUNT DOWN TIMER 1 JSR ADDRESS
+vector CDTMA2=$228+1                   ;COUNT DOWN TIMER 2 JSR ADDRESS
+data CDTMF3=$22A                   ;COUNT DOWN TIMER 3 FLAG
+data SRTIMR=$22B                   ;SOFTWARE REPEAT TIMER
+data CDTMF4=$22C                   ;COUNT DOWN TIMER 4 FLAG
+data INTEMP=$22D                   ;IAN'S TEMP (???)
+data CDTMF5=$22E                   ;COUNT DOWN TIMER 5 FLAG
+data SDMCTL=$22F                   ;SAVE DMACTL REGISTER
+data SDLSTL=$230                   ;SAVE DISPLAY LIST (LOW)
+data SDLSTH=$231                   ;SAVE DISPLAY LIST (HIGH)
+data SSKCTL=$232                   ;SKCTL REGISTER RAM
+
+data LPENH=$234                   ;LIGHT PEN HORIZ VALUE
+data LPENV=$235                   ;LIGHT PEN VERT VALUE
+vector BRKKY=$236+1                ;BREAK key interrupt vector
+data CDEVIC=$23A                   ;COMMAND FRAME BUFFER - DEVICE
+data CCOMND=$23B                   ;COMMAND
+data CAUX1=$23C                   ;COMMAND AUX BYTE 1
+data CAUX2=$23D                   ;COMMAND AUX BYTE 2
+data TEMP=$23E                   ;YES
+data ERRFLG=$23F                   ;ERROR FLAG - ANY DEVICE ERROR EXCEPT TIMEOUT
+
+data DFLAGS=$240                   ;DISK FLAGS FROM SECTOR ONE
+data DBSECT=$241                   ;NUMBER OF DISK BOOT SECTORS
+data BOOTAD=$242+1                   ;ADDRESS FOR DISK BOOT LOADER
+data COLDST=$244+1                   ;COLDSTART FLAG (1 = DOING COLDSTART)
+                                ;($245 SPARE)
+data DSKTIM=$246                   ;DISK TIME OUT REG
+data LINBUF=$247                   ;CHAR LINE BUFFER (40 BYTES)
+
+data GPRIOR=$26F                   ;GLOBAL PRIORITY CELL
+data PADDL0=$270                   ;POT 0 SHADOW
+data PADDL1=$271                   ;POT 1 SHADOW
+data PADDL2=$272                   ;POT 2 SHADOW
+data PADDL3=$273                   ;POT 3 SHADOW
+data PADDL4=$274                   ;POT 4 SHADOW
+data PADDL5=$275                   ;POT 5 SHADOW
+data PADDL6=$276                   ;POT 6 SHADOW
+data PADDL7=$277                   ;POT 7 SHADOW
+data STICK0=$278                   ;JOYSTICK 0 SHADOW
+data STICK1=$279                   ;JOYSTICK 1 SHADOW
+data STICK2=$27A                   ;JOYSTICK 2 SHADOW
+data STICK3=$27B                   ;JOYSTICK 3 SHADOW
+data PTRIG0=$27C                   ;PADDLE 0 TRIGGER
+data PTRIG1=$27D                   ;PADDLE 1 TRIGGER
+data PTRIG2=$27E                   ;PADDLE 2 TRIGGER
+data PTRIG3=$27F                   ;PADDLE 3 TRIGGER
+data PTRIG4=$280                   ;PADDLE 4 TRIGGER
+data PTRIG5=$281                   ;PADDLE 5 TRIGGER
+data PTRIG6=$282                   ;PADDLE 6 TRIGGER
+data PTRIG7=$283                   ;PADDLE 7 TRIGGER
+data STRIG0=$284                   ;JOYSTICK 0 TRIGGER
+data STRIG1=$285                   ;JOYSTICK 1 TRIGGER
+data STRIG2=$286                   ;JOYSTICK 2 TRIGGER
+data STRIG3=$287                   ;JOYSTICK 3 TRIGGER
+
+data CSTAT=$288                   ;(UNUSED)
+data WMODE=$289                   ;R/W FLAG FOR CASSETTE
+data BLIM=$28A                   ;BUFFER LIMIT (CASSETTE)
+                                ;($28B - $28F SPARE)
+data TXTROW=$290                   ;TEXT ROWCRS
+data TXTCOL=$291                   ;TEXT ROWCOL
+data TINDEX=$293                   ;TEXT INDEX
+data TXTMSC=$294+1                   ;FOOLS CONVRT INTO NEW MSC
+data TXTOLD=$296+5                   ;OLDROW & OLDCOL FOR TEXT (AND THEN SOME)
+data TMPX1=$29C
+data HOLD3=$29D
+data SUBTMP=$29E
+data HOLD2=$29F
+data DMASK=$2A0
+data TMPLBT=$2A1
+data ESCFLG=$2A2                   ;ESCAPE FLAG
+data TABMAP=$2A3+E                   ;TAB BUFFER
+data LOGMAP=$2B2+3                   ;LOGICAL LINE START BIT MAP
+data INVFLG=$2B6                   ;INVERSE VIDEO FLAG (ATARI KEY)
+data FILFLG=$2B7                   ;RIGHT FILL FLAG FOR DRAW
+data TMPROW=$2B8
+data TMPCOL=$2B9+1
+data SCRFLG=$2BB                   ;SET IF SCROLL OCCURS
+data HOLD4=$2BC                   ;MORE DRAW TEMPS
+data HOLD5=$2BD
+data SHFLOK=$2BE                   ;SHIFT LOCK KEY
+data BOTSCR=$2BF                   ;BOTTOM OF SCREEN (24 NORM, 4 SPLIT)
+
+data PCOLR0=$2C0                   ;P0 COLOR
+data PCOLR1=$2C1                   ;P1 COLOR
+data PCOLR2=$2C2                   ;P2 COLOR
+data PCOLR3=$2C3                   ;P3 COLOR
+data COLOR0=$2C4                   ;COLOR 0
+data COLOR1=$2C5
+data COLOR2=$2C6
+data COLOR3=$2C7
+data COLOR4=$2C8                   ;BACKGROUND
+                                ;($2C9 - $2DF SPARE)
+data GLBABS=$2E0                   ;GLOBAL VARIABLES
+                                ;($2E0 - $2E3 SPARE)
+data RAMSIZ=$2E4                   ;RAM SIZE (HI BYTE ONLY)
+data MEMTOP=$2E5+1                   ;TOP OF AVAILABLE MEMORY
+data MEMLO=$2E7+1                   ;BOTTOM OF AVAILABLE MEMORY
+                                ;($2E9 SPARE)
+data DVSTAT=$2EA+3                   ;STATUS BUFFER
+data CBAUDL=$2EE                   ;CASSETTE BAUD RATE (LO BYTE)
+data CBAUDH=$2EF                   ;   "      "    "   (HI BYTE)
+data CRSINH=$2F0                   ;CURSOR INHIBIT (00 = CURSOR ON)
+data KEYDEL=$2F1                   ;KEY DELAY
+data CH1=$2F2
+data CHACT=$2F3                   ;CHACTL REGISTER (SHADOW)
+data CHBAS=$2F4                   ;CHBAS REGISTER (SHADOW)
+                                ;($2F5 - $2F9 SPARE)
+data CHAR=$2FA
+data ATACHR=$2FB                   ;ATASCII CHARACTER
+data CH=$2FC                   ;GLOBAL VARIABLE FOR KEYBOARD
+data FILDAT=$2FD                   ;RIGHT FILL DATA (DRAW)
+data DSPFLG=$2FE                   ;DISPLAY FLAG: DISP CONTROLS IF NON-ZERO
+data SSFLAG=$2FF                   ;START/STOP FLAG (CNTL-1) FOR PAGING
+
+;       PAGE 3 LOCATIONS
+
+data DCB=$300                   ;DEVICE CONTROL BLOCK
+data DDEVIC=$300                   ;BUS I.D. NUMBER
+data DUNIT=$301                   ;UNIT NUMBER
+data DCOMND=$302                   ;BUS COMMAND
+data DSTATS=$303                   ;COMMAND TYPE/STATUS RETURN
+data DBUFLO=$304                   ;DATA BUFFER POINTER
+data DBUFHI=$305                   ; ...
+data DTIMLO=$306                   ;DEVICE TIME OUT IN 1 SEC. UNITS
+data DUNUSE=$307                   ;UNUSED
+data DBYTLO=$308                   ;BYTE COUNT
+data DBYTHI=$309                   ; ...
+data DAUX1=$30A                   ;COMMAND AUXILLARY BYTES
+data DAUX2=$30B                   ; ...
+
+data TIMER1=$30C+1                   ;INITIAL TIMER VALUE
+data ADDCOR=$30E                   ;ADDITION CORRECTION
+data CASFLG=$30F                   ;CASSETTE MODE WHEN SET
+data TIMER2=$310                   ;FINAL TIME VALUE (USED TO COMPUTE BAUD RATE)
+data TEMP1=$312+1                   ;TEMP LOCATIONS
+data TEMP2=$314                   ; ...
+data TEMP3=$315                   ; ...
+data SAVIO=$316                   ;SAVE SERIAL IN DATA PORT
+data TIMFLG=$317                   ;TIME OUT FLAG FOR BAUD RATE CORRECTION
+data STACKP=$318                   ;SIO STACK POINTER SAVE LOC
+data TSTAT=$319                   ;TEMP STATUS LOC
+
+data HATABS=$31A+25                  ;HANDLER ADDRESS TABLE 
+;constant MAXDEV=$21                    ;MAXIMUM HANDLER ADDRESS INDEX
+
+;       IOCB OFFSETS 
+
+data IOCB=$340                   ;I/O CONTROL BLOCKS
+data ICHID=$340                   ;HANDLER INDEX ($FF = FREE)
+data ICDNO=$341                   ;DEVICE NUMBER (DRIVE NUMBER)
+data ICCOM=$342                   ;COMMAND CODE
+data ICSTA=$343                   ;STATUS
+data ICBAL=$344                   ;BUFFER ADDRESS
+data ICBAH=$345                   ; ...
+data ICPTL=$346                   ;PUT BYTE ROUTINE ADDRESS - 1
+data ICPTH=$347                   ; ...
+data ICBLL=$348                   ;BUFFER LENGTH
+data ICBLH=$349                   ; ...
+data ICAX1=$34A                   ;AUXILLARY INFO
+data ICAX2=$34B                   ; ...
+data ICSPR=$34C                   ;4 SPARE BYTES
+
+data PRNBUF=$3C0                   ;PRINTER BUFFER
+                                ;($3EA - $3FC SPARE)
+
+;       PAGE 4 LOCATIONS
+
+data CASBUF=$3FD                   ;CASSETTE BUFFER
+
+; USER AREA STARTS HERE AND GOES TO THE END OF PAGE 5
+
+data USAREA=$480

@@ -1,0 +1,136 @@
+; GTIA Write
+data HPOSP0=d000
+data HPOSP1=d001
+data HPOSP2=d002
+data HPOSP3=d003
+data HPOSM0=d004
+data HPOSM1=d005
+data HPOSM2=d006
+data HPOSM3=d007
+data SIZEP0=d008
+data SIZEP1=d009
+data SIZEP2=d00a
+data SIZEP3=d00b
+data SIZEM=d00c
+data GRAFP0=d00d
+data GRAFP1=d00e
+data GRAFP2=d00f
+data GRAFP3=d010
+data GRAFM=d011
+data COLPM0=d012
+data COLPM1=d013
+data COLPM2=d014
+data COLPM3=d015
+data COLPF0=d016
+data COLPF1=d017
+data COLPF2=d018
+data COLPF3=d019
+data COLBK=d01a
+data PRIOR=d01b
+data VDELAY=d01c
+data GRACTL=d01d
+data HITCLR=d01e
+data CONSOL=d01f
+
+; GTIA Read
+;data M0PF=d000
+;data M1PF=d001
+;data M2PF=d002
+;data M3PF=d003
+;data P0PF=d004
+;data P1PF=d005
+;data P2PF=d006
+;data P3PF=d007
+;data M0PL=d008
+;data M1PL=d009
+;data M2PL=d00a
+;data M3PL=d00b
+;data P0PL=d00c
+;data P1PL=d00d
+;data P2PL=d00e
+;data P3PL=d00f
+;data TRIG0=d010
+;data TRIG1=d011
+;data TRIG2=d012
+;data TRIG3=d013
+;data PAL=d014
+
+; POKEY Write
+data AUDF1=d200
+data AUDC1=d201
+data AUDF2=d202
+data AUDC2=d203
+data AUDF3=d204
+data AUDC3=d205
+data AUDF4=d206
+data AUDC4=d207
+data AUDCTL=d208
+data STIMER=d209
+data SKREST=d20a
+data POTGO=d20b
+data SEROUT=d20d
+data IRQEN=d20e
+data SKCTL=d20f
+
+data P2AUDF1=d210
+data P2AUDC1=d211
+data P2AUDF2=d212
+data P2AUDC2=d213
+data P2AUDF3=d214
+data P2AUDC3=d215
+data P2AUDF4=d216
+data P2AUDC4=d217
+data P2AUDCTL=d218
+data P2STIMER=d219
+data P2SKREST=d21a
+data P2POTGO=d21b
+data P2SEROUT=d21d
+data P2IRQEN=d21e
+data P2SKCTL=d21f
+
+; POKEY Read
+;data POT0=d200
+;data POT1=d201
+;data POT2=d202
+;data POT3=d203
+;data POT4=d204
+;data POT5=d205
+;data POT6=d206
+;data POT7=d207
+;data ALLPOT=d208
+;data KBCODE=d209
+;data RANDOM=d20a
+;data SERIN=d20d
+;data IRQST=d20e
+;data SKSTAT=d20f
+
+; PIA
+data PORTA=d300
+data PORTB=d301
+data PACTL=d302
+data PBCTL=d303
+
+; ANTIC
+data DMACTL=d400
+data CHACTL=d401
+data DLISTL=d402
+data DLISTH=d403
+data HSCROL=d404
+data VSCROL=d405
+data PMBASE=d407
+data CHBASE=d409
+data WSYNC=d40a
+data VCOUNT=d40b ; Read
+data PENH=d40c ; Read
+data PENV=d40d ; Read
+data NMIEN=d40e
+data NMIRES=d40f ; Write
+;data NMIST=d40f ; Read
+
+; ROM
+data STDCH=e000
+
+; SALLY
+vector NMIVEC=FFFA+1
+vector RSTVEC=FFFC+1
+vector IRQVEC=FFFE+1 ; Also BRK

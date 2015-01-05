@@ -2,7 +2,7 @@
 # Copyright (C) 2014 Lyren Brown
 use strict;
 use warnings;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 
 my $verbose = 0;
 sub info { $verbose and warn @_; }
@@ -67,20 +67,33 @@ sub label {
 
 sub labels {
     my ($state, $opts) = @_;
-    for my $opt (qw(code data vector)) {
+    for my $opt (qw(code data vector constant)) {
         for my $value (@{$opts->{$opt} || []}) {
-            if ($value =~ /(?:(\w+)=)?(?:(\d+):)?(\S+)/) {
-                my $label = $1;
-                my $segnum = $2 || 0;
-                my $addr = hex($3);
+            my $match = $value =~ /
+                (?:(\w+)=)? # optional label
+                (?:(\d+):)? # optional segment in decimal
+                (?:\$)? # optional $
+                ([0-9a-fA-F]+) # address in hex
+                (?:\+([0-9a-fA-F]+))? # optional range in hex
+                /x;
+            $match or die "ERROR: Unrecognized $opt address: $value\n";
+            my $label = $1;
+            my $segnum = $2 || 0;
+            my $base = hex($3);
+            my $range = hex($4||0);
+            for my $off (0 .. $range) {
+                my $addr = $base + $off;
                 if (($addr & 0xFFFF) != $addr) {
-                    warn sprintf "WARNING: Out of range $opt: %04X\n", $addr;
+                    warn "WARNING: Out of range $opt: $value\n";
                     $addr &= 0xFFFF;
                 }
                 if (defined $state->{$opt}{$segnum}{$addr}) {
-                    warn sprintf "WARNING: Duplicate $opt: %04X\n", $addr;
+                    warn sprintf "WARNING: Duplicate $opt: $value: %X\n",
+                        $addr;
                 }
-                $state->{$opt}{$segnum}{$addr} = $label;
+                $state->{$opt}{$segnum}{$addr} =
+                    $off ? $off > 9 ? sprintf "$label+\$%X", $off :
+                    "$label+$off" : $label;
             }
         }
     }
@@ -92,16 +105,6 @@ sub copy {
     my $copy = {%$state}; # Shallow copy state
     $copy->{mem} = [@{$state->{mem}}]; # Shallow copy mem
     return $copy;
-}
-
-sub byteat {
-    my ($state, $i) = @_;
-    return $state->{mem}[$i][VALUE];
-}
-
-sub wordat {
-    my ($state, $i) = @_;
-    return $state->{mem}[$i][VALUE] + ($state->{mem}[$i+1][VALUE]<<8);
 }
 
 sub rel {
@@ -193,12 +196,37 @@ sub trace {
     }
 }
 
+sub extern {
+    my ($opts, $state) = @_;
+    return if not $opts->{extern};
+    return if not $opts->{labels};
+    my @labels;
+    for my $opt (qw(code data vector)) {
+        for my $labels (values %{$state->{$opt}||{}}) {
+            for my $addr (sort {$a <=> $b} keys %$labels) {
+                my $label = $labels->{$addr} or next;
+                next if $opts->{labelled}{$label};
+                next if not $opts->{referenced}{$label};
+                next if $label =~ /\+/;
+                push @labels,
+                    [$addr, sprintf "$labels->{$addr} equ \$%X\n", $addr];
+            }
+        }
+    }
+    print map $_->[1], sort { $a->[0] <=> $b->[0] } @labels;
+}
+
 sub dump_label {
-    my ($opts, $label, $byte) = @_;
+    my ($opts, $state, $label, $byte, $off) = @_;
     return if not $opts->{labels};
     return if not $label;
+    return if $label =~ /\+/;
     my $callers = $byte->[CALLERS];
-    print $label;
+    if ($off) {
+        printf "$label equ *+$off";
+    } else {
+        print $label;
+    }
     my $tabs = (3 - ((length $label) >> 3)) || 1;
     print (("\t") x $tabs);
     if ($callers and $opts->{call}) {
@@ -206,6 +234,7 @@ sub dump_label {
         print " $_" for @$callers;
     }
     print "\n";
+    $opts->{labelled}{$label}++;
 }
 
 sub dis {
@@ -219,17 +248,28 @@ sub dis {
         my $targets = $byte->[TARGETS];
         my $label = $byte->[LABEL];
         my $accessors = $byte->[ACCESSORS];
-        if ($len and $i + $len - 1 <= $end) {
+        my $bitjmp = $value == 0x2C && $mem->[$i+1][CALLERS];
+        if (not $bitjmp and $len and $i + $len - 1 <= $end) {
             my ($code, $i1, $i2) = map $mem->[$_][VALUE], $i .. $i+2;
-            dump_label($opts, $label, $byte);
+            dump_label($opts, $state, $label, $byte);
+            for (my $a = $i+1; $a < $i+$len; ++$a) {
+                if (my $label = $mem->[$a][LABEL]) {
+                    my $off = $a-$i;
+                    dump_label($opts, $state, $label, $mem->[$a], $off);
+                }
+            }
             printf "    $mn[$code]";
             my $mode = $mode[$code];
             my $imm8 = $i1||0;
             my $imm16 = ($i1||0) + (($i2||0)<<8);
             my $rel = rel($i, $i1||0);
             my $ab = $i2 ? "" : "a:";
-            if ($opts->{labels} && $targets && $mode ne "Indirect") {
+            if ($opts->{labels} && $targets && $mode !~ /Indirect|Accum|Implied/) {
                 $imm8 = $imm16 = $rel = $targets->[-1];
+                $opts->{referenced}{$imm8}++;
+            } elsif ($mode eq "Immediate" and $state->{constant}{$segnum}{$i1}) {
+                $imm8 = $state->{constant}{$segnum}{$i1};
+                $opts->{referenced}{$imm8}++;
             } else {
                 $_ = sprintf "\$%02X", $_ for $imm8;
                 $_ = sprintf "\$%04X", $_ for $imm16, $rel;
@@ -249,22 +289,17 @@ sub dis {
             print "    " if $mode eq "Implied";
             if ($opts->{comment}) {
                 printf "\t\t; %04X:%s", $i, join "",
-                    map { sprintf " %02X", $mem->[$_][VALUE] } $i .. ($i+$len-1);
+                    map { sprintf " %02X", $mem->[$_][VALUE] }
+                    $i .. ($i+$len-1);
                 if ($accessors and $opts->{access}) {
                     print " Access:";
                     print " $_" for @$accessors;
                 }
             }
             print "\n";
-            for (my $a = $i+1; $a < $i+$len; ++$a) {
-                if (my $label = $mem->[$a][LABEL]) {
-                    my $off = $a-$i-$len;
-                    dump_label($opts, "$label equ *$off", $mem->[$a]);
-                }
-            }
             $i += $len - 1;
         } else {
-            dump_label($opts, $label, $byte);
+            dump_label($opts, $state, $label, $byte);
             printf "    dta \$%X", $value;
             if ($opts->{comment}) {
                 printf "\t\t; %04X: %02X", $i, $value;
@@ -273,6 +308,7 @@ sub dis {
                     print " $_" for @$accessors;
                 }
                 print " <--- Data" if exists $state->{data}{$segnum}{$i};
+                print " <--- Bit Jump" if $len and $bitjmp;
             }
             print "\n";
         }
@@ -296,20 +332,29 @@ sub enter {
     }
     while (my ($code, $label) = each %{$state->{code}{$segnum}}) {
         $label = $label ? "$label=" : "";
+        next if $label =~ /\+/;
         info(sprintf "CODE: $label%04X\n", $code);
         trace($state, $code, sprintf "-c %04X", $code);
     }
     while (my ($vector, $label) = each %{$state->{vector}{$segnum}}) {
+        $label = $label ? "$label=" : "";
+        next if $label =~ /\+/;
         if (grep !defined $mem->[$_][VALUE], $vector, $vector+1) {
             warn "WARNING: Vector through undefined memory: ",
                 loc($state, $vector), "\n";
             next;
         }
-        $label = $label ? "$label=" : "";
         info(sprintf "VECTOR: $label%04X\n", $vector);
         my $targ = addr($mem->[$vector][VALUE], $mem->[$vector+1][VALUE]);
         trace($state, $targ, sprintf "-v %04X", $vector);
     }
+}
+
+sub runini {
+    my ($opts, $state, $i) = @_;
+    my $targ = addr($state->{mem}[$i][VALUE], $state->{mem}[$i+1][VALUE]);
+    my $label = $state->{mem}[$targ][LABEL];
+    return $opts->{labels} && $label ? $label : sprintf "\$%04X", $targ;
 }
 
 sub xex {
@@ -334,7 +379,7 @@ sub xex {
         my $len = $end - $start + 1;
         info(sprintf "START: %X END: %X\n", $start, $end);
         die "ERROR: Segment length is negative: $i, $len\n" if $len < 0;
-        die "ERROR: Segment is past EOF: $i, $len\n" if $i+$len > length $stream;
+        die "ERROR: Segment past EOF: $i, $len\n" if $i+$len > length $stream;
         my $data = substr $stream, $i, $len;
         $i += $len;
         layer($state, $start, $end, $data);
@@ -367,18 +412,19 @@ sub xex {
             printf "    dta a(\$FFFF)\t; Segment header\n";
             printf "    opt h+\n";
         };
-        if ($start <= 0x2E0 and $end >= 0x2E1) {
+        if ($start == 0x2E0 and $end == 0x2E1) {
             $header->();
-            printf "    run \$%04X\n", wordat($state, 0x2E0);
-        } elsif ($start <= 0x2E2 and $end >= 0x2E3) {
+            printf "    run %s\n", runini($opts, $state, 0x2E0);
+        } elsif ($start == 0x2E2 and $end == 0x2E3) {
             $header->();
-            printf "    ini \$%04X\n", wordat($state, 0x2E2);
+            printf "    ini %s\n", runini($opts, $state, 0x2E2);
         } else {
             my $f = $ffff ? "f:" : "";
             printf "    org $f\$%04X\t\t; end %04X\n", $start, $end;
             dis($state, $start, $end, $opts);
         }
     }
+    extern($opts, $state);
 }
 
 sub sap {
@@ -417,17 +463,12 @@ sub prg {
     my $start = unpack "v", substr $stream, 0, 2;
     my $end = $start + (length $stream) - 3;
     if ($stream =~ /^......\x9E *(\d+)/s) {
-        push @{$opts->{entry}}, sprintf "%X", $1;
+        push @{$opts->{code}}, sprintf "%X", $1;
     }
     printf "    opt h-\n";
-    printf "    org \$%04X\n", $start-2;
     printf "    dta a(\$%04X)\t; PRG Header\n", $start;
     $opts->{org} = sprintf "%X", $start;
-    my $state = state();
-    layer($state, $start, $end, substr $stream, 2);
-    labels($state, $opts);
-    enter($state);
-    dis($state, $start, $end, $opts);
+    raw((substr $stream, 2), $opts);
 }
 
 sub raw {
@@ -441,10 +482,12 @@ sub raw {
     labels($state, $opts);
     enter($state);
     dis($state, $start, $end, $opts);
+    extern($opts, $state);
 }
 
 sub arg {
     my ($opts, $args, $file) = @_;
+    return if grep $file eq $_, $opts->{arg};
     open my $fh, $file or die "ERROR: Cannot open $file: $!\n";
     my %args = map { /(\w+)/; my $a = $1; $a => [/=s/, /@/] } @$args;
     while (<$fh>) {
@@ -484,6 +527,7 @@ sub usage {
     die "Usage: dis [options] file...\n",
         "  -c L=XXXX  Code entry point(s)\n",
         "  -d L=XXXX  Data location(s) - Disallow tracing as code\n",
+        "  -C L=XXXX  Constant value(s)\n",
         "  -v L=XXXX  Vector(s), e.g. FFFA\n",
         "  -o L=XXXX  Origin for raw files\n",
         "  -l         Create labels\n",
@@ -496,6 +540,7 @@ sub usage {
         "  -comment   Emit comments\n",
         "  -call      Emit callers\n",
         "  -access    Emit accessors\n",
+        "  -extern    Emit labels for out-of-range addresses\n",
         "  -verbose   Print info to STDERR\n",
         "  -dump      Print options in format for -a\n",
         "  -a FILE    Read options from FILE. Lines are: OPTION VALUE\n",
@@ -508,6 +553,7 @@ sub main {
     my @args = qw{
         code|c=s@
         data|d=s@
+        constant|C=s@
         vector|v=s@
         org|o=s
         labels|l!
@@ -519,18 +565,19 @@ sub main {
         comment!
         call!
         access!
+        extern!
         verbose!
         dump!
         arg|a=s@
     };
-    my %opts = (comment => 1, call => 1, access => 1);
+    my %opts = (comment => 1, call => 1, access => 1, extern => 1);
     GetOptions(\%opts, @args) or usage();
 
     usage() if $opts{help};
     usage() if not @ARGV and -t STDOUT;
     usage() if @ARGV > 1;
 
-    arg(\%opts, \@args, $_) for @{$opts{arg}||[]};
+    arg(\%opts, \@args, $_) for @{[@{$opts{arg}||[]}]};
 
     if ($opts{dump}) {
         dump_args(\%opts, \@args);
@@ -579,7 +626,7 @@ __DATA__
 # - Added missing opcode $5E
 Std Mnemonic Hex Value Description                Addressing Mode  Bytes/Time 
 *   BRK      $00       Stack <- PC, PC <- ($fffe) (Immediate)      1/7
-*   ORA      $01       A <- (A) V M               (Ind,X)          6/2
+*   ORA      $01       A <- (A) V M               (Ind,X)          2/6
     JAM      $02       [locks up machine]         (Implied)        1/-
     SLO      $03       M <- (M >> 1) + A + C      (Ind,X)          2/8
     NOP      $04       [no operation]             (Z-Page)         2/3
