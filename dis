@@ -271,8 +271,9 @@ sub dis {
             my $rel = rel($i, $i1||0);
             my $ab = $i2 ? "" : "a:";
             if ($opts->{labels} && $targets && $mode !~ /Indirect|Accum|Implied/) {
-                $imm8 = $imm16 = $rel = $targets->[-1];
-                $opts->{referenced}{$imm8}++;
+                my $targ = $imm8 = $imm16 = $rel = $targets->[-1];
+                $targ =~ s/\+.*//;
+                $opts->{referenced}{$targ}++;
             } elsif ($mode eq "Immediate" and $state->{constant}{$segnum}{$i1}) {
                 $imm8 = $state->{constant}{$segnum}{$i1};
                 $opts->{referenced}{$imm8}++;

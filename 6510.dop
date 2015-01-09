@@ -1,6 +1,6 @@
 ; 6510 registers
 data CPUPORTDIR=$0
 data CPUPORT=$1
-data NMIVEC=$FFFA+1
-data RSTVEC=$FFFC+1
-data IRQVEC=$FFFE+1
+vector NMIVEC=$FFFA+1
+vector RSTVEC=$FFFC+1
+vector IRQVEC=$FFFE+1
