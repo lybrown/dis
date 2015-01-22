@@ -67,6 +67,7 @@ sub label {
 
 sub labels {
     my ($state, $opts) = @_;
+    my $rangelabels = $opts->{rangelabels};
     for my $opt (qw(code data vector constant)) {
         for my $value (@{$opts->{$opt} || []}) {
             my $match = $value =~ /
@@ -92,7 +93,8 @@ sub labels {
                         $addr;
                 }
                 $state->{$opt}{$segnum}{$addr} =
-                    $off ? $off > 9 ? sprintf "$label+\$%X", $off :
+                    $off ? $rangelabels ? sprintf "${label}_%X", $off :
+                    $off > 9 ? sprintf "$label+\$%X", $off :
                     "$label+$off" : $label;
             }
         }
@@ -130,7 +132,7 @@ sub trace {
     #info(sprintf "; TRACING: %X\n", $entry);
     my $mem = $state->{mem};
     my $byte = $mem->[$entry] || return;
-    if (defined $byte->[VALUE]) {
+    if (defined $byte->[VALUE] || $byte->[LABEL]) {
         my $pre = $byte->[SEGNUM] ? sprintf "s$byte->[SEGNUM]" : "";
         $byte->[LABEL] ||= $pre . sprintf "l%04X", $entry;
         push @{$mem->[$caller][TARGETS]}, $byte->[LABEL] if defined $caller;
@@ -274,6 +276,8 @@ sub dis {
                 my $targ = $imm8 = $imm16 = $rel = $targets->[-1];
                 $targ =~ s/\+.*//;
                 $opts->{referenced}{$targ}++;
+                # Use z: if label is not predeclared in zero-page
+                $imm8 = "z:$imm8" if not defined $mem->[$i1][VALUE];
             } elsif ($mode eq "Immediate" and $state->{constant}{$segnum}{$i1}) {
                 $imm8 = $state->{constant}{$segnum}{$i1};
                 $opts->{referenced}{$imm8}++;
@@ -371,7 +375,10 @@ sub xex {
     my @segments;
     my $run;
     my $run_caller;
+    my $segstart;
+    my $extra;
     for (my $i = 0; $i < length $stream;) {
+        $segstart = $i;
         ++$state->{segnum};
         delete $state->{visited};
         my $start = word($stream, $i);
@@ -385,7 +392,11 @@ sub xex {
         $i += 2;
         my $len = $end - $start + 1;
         info(sprintf "START: %X END: %X\n", $start, $end);
-        die "ERROR: Segment length is negative: $i, $len\n" if $len < 0;
+        if ($len < 0) {
+            warn "WARNING: Segment length is negative: $i, $len\n";
+            $extra = substr $stream, $segstart;
+            last;
+        }
         warn "WARNING: Segment past EOF: $i, $len\n" if $i+$len > length $stream;
         my $data = substr $stream, $i, $len;
         $end = $start + (length $data) - 1;
@@ -432,6 +443,11 @@ sub xex {
             printf "    org $f\$%04X\t\t; end %04X\n", $start, $end;
             dis($state, $start, $end, $opts);
         }
+    }
+    if ($extra) {
+        print "    ; Corrupted segment\n";
+        print "    opt h-\n";
+        printf "    dta \$%02X\n", ord($_) for split //, $extra;
     }
     extern($opts, $state);
 }
@@ -550,20 +566,23 @@ sub usage {
         "  -call      Emit callers\n",
         "  -access    Emit accessors\n",
         "  -extern    Emit labels for out-of-range addresses\n",
+        "  -rangelabels Emit labels for ranges instead of base+offset\n",
         "  -verbose   Print info to STDERR\n",
         "  -dump      Print options in format for -a\n",
         "  -a FILE    Read options from FILE. Lines are: OPTION VALUE\n",
         "\n",
+        "  Addresses may include a range, e.g. table=\$300+F\n",
         "  Addresses may include xex segment number, e.g. 3:1FAE\n",
         ;
 }
 
 sub main {
-    my @args = qw{
+    my @args = qw(
         code|c=s@
         data|d=s@
         constant|C=s@
         vector|v=s@
+        rangelabels!
         org|o=s
         labels|l!
         illegal|i!
@@ -578,7 +597,7 @@ sub main {
         verbose!
         dump!
         arg|a=s@
-    };
+    );
     my %opts = (comment => 1, call => 1, access => 1, extern => 1);
     GetOptions(\%opts, @args) or usage();
 
