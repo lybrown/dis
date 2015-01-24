@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Getopt::Long qw(:config no_ignore_case);
+no warnings 'recursion';
 
 my $verbose = 0;
 sub info { $verbose and warn @_; }
@@ -136,6 +137,7 @@ sub seglabel {
 sub trace {
     my ($state, $entry, $callerid, $caller) = @_;
     #info(sprintf "; TRACING: %X\n", $entry);
+    $state->{traced} = 1;
     my $mem = $state->{mem};
     my $byte = $mem->[$entry] || return;
     if (defined $byte->[VALUE] || $byte->[LABEL]) {
@@ -389,23 +391,35 @@ sub xex {
         $segstart = $i;
         ++$state->{segnum};
         delete $state->{visited};
-        my $start = word($stream, $i);
-        $i += 2;
-        my $ffff = $start == 0xFFFF;
-        if ($ffff) {
+        my $start;
+        my $ffff;
+        my $end;
+        eval {
             $start = word($stream, $i);
             $i += 2;
-        }
-        my $end = word($stream, $i);
-        $i += 2;
+            $ffff = $start == 0xFFFF;
+            if ($ffff) {
+                $start = word($stream, $i);
+                $i += 2;
+            }
+            $end = word($stream, $i);
+            $i += 2;
+            1;
+        } or do {
+            warn "WARNING: Incomplete segment header at byte $segstart\n";
+            $extra = substr $stream, $segstart;
+            last;
+        };
         my $len = $end - $start + 1;
         info(sprintf "START: %X END: %X\n", $start, $end);
         if ($len < 0) {
-            warn "WARNING: Segment length is negative: $i, $len\n";
+            warn "WARNING: Segment length is negative ",
+                "at byte $segstart: $len\n";
             $extra = substr $stream, $segstart;
             last;
         }
-        warn "WARNING: Segment past EOF: $i, $len\n" if $i+$len > length $stream;
+        warn "WARNING: Segment past EOF at byte $segstart, $len\n"
+            if $i+$len > length $stream;
         my $data = substr $stream, $i, $len;
         $end = $start + (length $data) - 1;
         $i += $len;
@@ -424,7 +438,7 @@ sub xex {
         push @segments, [$start, $end, $data, copy($state), $ffff];
     }
     trace($state, $run, $run_caller) if defined $run;
-    trace($state, $segments[0][0], "COM") if @segments == 1;
+    trace($state, $segments[0][0], "COM") if not $state->{traced} and @segments;
     $state->{segnum} = 0;
     enter($state);
     for my $segment (@segments) {

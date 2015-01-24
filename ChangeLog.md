@@ -1,3 +1,14 @@
+0.5
+---
+
+- Added handling of corrupted XEX files
+- Added handling of COM-style XEX files
+- Added -rangelabels to emit BASE\_OFFSET instead of BASE+OFFSET
+- Added z: to zero-page label references for labels that are emitted at end
+- Added Access comments to -extern equates
+- Added segment to Access and Caller comments and uniquified lists
+- Fixed handling of indirect JMP into undefined memory
+
 0.4
 ---
 
