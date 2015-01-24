@@ -127,6 +127,12 @@ sub loc {
     return sprintf "%04X", $i;
 }
 
+sub seglabel {
+    my ($state, $addr) = @_;
+    my $segnum = $state->{mem}[$addr][SEGNUM];
+    return $segnum ? sprintf "${segnum}:%04X", $addr : sprintf "%04X", $addr;
+}
+
 sub trace {
     my ($state, $entry, $callerid, $caller) = @_;
     #info(sprintf "; TRACING: %X\n", $entry);
@@ -139,7 +145,7 @@ sub trace {
         if ($callerid) {
             push @{$byte->[CALLERS]}, $callerid;
         } else {
-            push @{$byte->[CALLERS]}, sprintf "%04X", $caller;
+            push @{$byte->[CALLERS]}, seglabel($state, $caller);
         }
     }
     for (my $i = $entry;;) {
@@ -166,7 +172,7 @@ sub trace {
             my $targ;
             if ($mode[$code] eq "Indirect") {
                 $targ = addr($i1, $i2);
-                push @{$mem->[$targ][ACCESSORS]}, sprintf "%04X", $i;
+                push @{$mem->[$targ][ACCESSORS]}, seglabel($state, $i);
                 my ($lo, $hi) = map $mem->[$_][VALUE], $targ, $targ+1;
                 if (defined $lo and defined $hi) {
                     $targ = addr($lo, $hi);
@@ -188,16 +194,18 @@ sub trace {
         } elsif ($mode =~ /Ind|Z-Page/) {
             my $tlabel = $mem->[$i1][LABEL];
             push @{$byte->[TARGETS]}, $tlabel if $tlabel;
-            push @{$mem->[$i1][ACCESSORS]}, sprintf "%04X", $i;
+            push @{$mem->[$i1][ACCESSORS]}, seglabel($state, $i);
         } elsif ($mode =~ /Absolute/) {
             my $addr = addr($i1, $i2);
             my $tlabel = $mem->[$addr][LABEL];
             push @{$byte->[TARGETS]}, $tlabel if $tlabel;
-            push @{$mem->[$addr][ACCESSORS]}, sprintf "%04X", $i;
+            push @{$mem->[$addr][ACCESSORS]}, seglabel($state, $i);
         }
         $i += $len[$code];
     }
 }
+
+sub uniq { my %uniq; grep !$uniq{$_}++, @_ }
 
 sub extern {
     my ($opts, $state) = @_;
@@ -214,7 +222,7 @@ sub extern {
                 my $accessors = $state->{mem}[$addr][ACCESSORS];
                 my $access = "";
                 if ($accessors and $opts->{access}) {
-                    $access = "\t\t; " . join " ", "Access:", @$accessors;
+                    $access = "\t\t; " . join " ", "Access:", uniq @$accessors;
                 }
                 push @labels, [$addr,
                     sprintf "$labels->{$addr} equ \$%X$access\n", $addr];
@@ -239,7 +247,7 @@ sub dump_label {
     print (("\t") x $tabs);
     if ($callers and $opts->{call}) {
         print "; Callers:";
-        print " $_" for @$callers;
+        print " $_" for uniq @$callers;
     }
     print "\n";
     $opts->{labelled}{$label}++;
@@ -304,7 +312,7 @@ sub dis {
                     $i .. ($i+$len-1);
                 if ($accessors and $opts->{access}) {
                     print " Access:";
-                    print " $_" for @$accessors;
+                    print " $_" for uniq @$accessors;
                 }
             }
             print "\n";
@@ -316,7 +324,7 @@ sub dis {
                 printf "\t\t; %04X: %02X", $i, $value;
                 if ($accessors and $opts->{access}) {
                     print " Access:";
-                    print " $_" for @$accessors;
+                    print " $_" for uniq @$accessors;
                 }
                 print " <--- Data" if exists $state->{data}{$segnum}{$i};
                 print " <--- Bit Jump" if $len and $bitjmp;
