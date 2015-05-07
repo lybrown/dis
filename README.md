@@ -29,10 +29,13 @@ Usage
       -comment   Emit comments
       -call      Emit callers
       -access    Emit accessors
+      -extern    Emit labels for out-of-range addresses
+      -rangelabels Emit labels for ranges instead of base+offset
       -verbose   Print info to STDERR
       -dump      Print options in format for -a
       -a FILE    Read options from FILE. Lines are: OPTION VALUE
     
+      Addresses may include a range, e.g. table=$300+F
       Addresses may include xex segment number, e.g. 3:1FAE
 
 Examples

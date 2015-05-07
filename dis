@@ -79,10 +79,10 @@ sub labels {
                 (?:\+([0-9a-fA-F]+))? # optional range in hex
                 /x;
             $match or die "ERROR: Unrecognized $opt address: $value\n";
-            my $label = $1;
             my $segnum = $2 || 0;
             my $base = hex($3);
             my $range = hex($4||0);
+            my $label = $1 || sprintf "u%2X", $base;
             for my $off (0 .. $range) {
                 my $addr = $base + $off;
                 if (($addr & 0xFFFF) != $addr) {
@@ -287,7 +287,8 @@ sub dis {
                 $targ =~ s/\+.*//;
                 $opts->{referenced}{$targ}++;
                 # Use z: if label is not predeclared in zero-page
-                $imm8 = "z:$imm8" if not defined $mem->[$i1][VALUE];
+                $imm8 = "z:$imm8"
+                    if not defined $mem->[$i1][VALUE] and $mode ne "(Ind),Y";
             } elsif ($mode eq "Immediate" and $state->{constant}{$segnum}{$i1}) {
                 $imm8 = $state->{constant}{$segnum}{$i1};
                 $opts->{referenced}{$imm8}++;
@@ -522,7 +523,7 @@ sub raw {
     my ($stream, $opts) = @_;
     my $start = hex($opts->{org}||0);
     my $end = $start + (length $stream) - 1;
-    printf "    opt h-\n";
+    printf "    opt h-\n" unless $opts->{headers};
     printf "    org \$%04X\n", $start;
     my $state = state();
     layer($state, $start, $end, $stream);
@@ -616,6 +617,7 @@ sub main {
         call!
         access!
         extern!
+        headers!
         verbose!
         dump!
         arg|a=s@
