@@ -339,8 +339,8 @@ data COLOR2=$2C6
 data COLOR3=$2C7
 data COLOR4=$2C8                   ;BACKGROUND
                                 ;($2C9 - $2DF SPARE)
-data GLBABS=$2E0+2                   ;GLOBAL VARIABLES
-                                ;($2E0 - $2E3 SPARE)
+;data GLBABS=$2E0+2                   ;GLOBAL VARIABLES
+;                                ;($2E0 - $2E3 SPARE)
 data RAMSIZ=$2E4                   ;RAM SIZE (HI BYTE ONLY)
 data MEMTOP=$2E5+1                   ;TOP OF AVAILABLE MEMORY
 data MEMLO=$2E7+1                   ;BOTTOM OF AVAILABLE MEMORY
@@ -419,3 +419,6 @@ data CASBUF=$3FD                   ;CASSETTE BUFFER
 ; USER AREA STARTS HERE AND GOES TO THE END OF PAGE 5
 
 data USAREA=$480
+
+data RUNAD=$2E0+1
+data INITAD=$2E2+1

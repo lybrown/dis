@@ -37,6 +37,7 @@ use constant {
     ACCESSORS => 4,
     TARGETS => 5,
     LABEL => 6,
+    ADDRESS => 7,
 };
 
 sub state {
@@ -69,13 +70,13 @@ sub label {
 sub labels {
     my ($state, $opts) = @_;
     my $rangelabels = $opts->{rangelabels};
-    for my $opt (qw(code data vector constant)) {
+    for my $opt (qw(code data vector constant address codeptr)) {
         for my $value (@{$opts->{$opt} || []}) {
             my $match = $value =~ /
                 (?:(\w+)=)? # optional label
                 (?:(\d+):)? # optional segment in decimal
                 (?:\$)? # optional $
-                ([0-9a-fA-F]+) # address in hex
+                ([0-9a-fA-F_]+) # address in hex
                 (?:\+([0-9a-fA-F]+))? # optional range in hex
                 /x;
             $match or die "ERROR: Unrecognized $opt address: $value\n";
@@ -83,9 +84,17 @@ sub labels {
             my $base = hex($3);
             my $range = hex($4||0);
             my $label = $1 || sprintf "u%2X", $base;
-            for my $off (0 .. $range) {
+            if ($opt =~ /address|codeptr/ and $base > 0xFFFF and $range) {
+                for (my $off = 0; $off <= $range; ++$off) {
+                    my $addr = $base + $off + ($off << 16);
+                    $state->{$opt}{$segnum}{$addr} = $label;
+                }
+                next;
+            }
+            my $stride = $opt =~ /address|codeptr/ ? 2 : 1;
+            for (my $off = 0; $off <= $range; $off += $stride) {
                 my $addr = $base + $off;
-                if (($addr & 0xFFFF) != $addr) {
+                if ($opt !~ /address|codeptr/ and ($addr & 0xFFFF) != $addr) {
                     warn "WARNING: Out of range $opt: $value\n";
                     $addr &= 0xFFFF;
                 }
@@ -135,6 +144,15 @@ sub seglabel {
     return $segnum ? sprintf "${segnum}:%04X", $addr : sprintf "%04X", $addr;
 }
 
+sub getbyte {
+    my ($state, $addr) = @_;
+    my $mem = $state->{mem};
+    my $byte = $mem->[$addr];
+    my $pre = $byte->[SEGNUM] ? sprintf "s$byte->[SEGNUM]" : "";
+    my $label = $byte->[LABEL] ||= $pre . sprintf "l%04X", $addr;
+    return ($byte, $label);
+}
+
 sub trace {
     my ($state, $entry, $callerid, $caller) = @_;
     #info(sprintf "; TRACING: %X\n", $entry);
@@ -142,9 +160,6 @@ sub trace {
     my $mem = $state->{mem};
     my $byte = $mem->[$entry] || return;
     if (defined $byte->[VALUE] || $byte->[LABEL]) {
-        my $pre = $byte->[SEGNUM] ? sprintf "s$byte->[SEGNUM]" : "";
-        $byte->[LABEL] ||= $pre . sprintf "l%04X", $entry;
-        push @{$mem->[$caller][TARGETS]}, $byte->[LABEL] if defined $caller;
         if ($callerid) {
             push @{$byte->[CALLERS]}, $callerid;
         } else {
@@ -172,9 +187,10 @@ sub trace {
         } elsif ($mn[$code] eq "rti") {
             last;
         } elsif ($mn[$code] eq "jmp") {
-            my $targ;
+            my $targ = addr($i1, $i2);
+            my ($data, $tlabel) = getbyte($state, $targ);
+            push @{$byte->[TARGETS]}, $tlabel if $tlabel;
             if ($mode[$code] eq "Indirect") {
-                $targ = addr($i1, $i2);
                 push @{$mem->[$targ][ACCESSORS]}, seglabel($state, $i);
                 my ($lo, $hi) = map $mem->[$_][VALUE], $targ, $targ+1;
                 if (defined $lo and defined $hi) {
@@ -182,29 +198,28 @@ sub trace {
                 } else {
                     warn "WARNING: Indirect JMP references undefined ",
                         "memory at ", loc($state, $i), "\n";
+                    $targ = undef;
                 }
-            } else {
-                $targ = addr($i1, $i2);
             }
             trace($state, $targ, $byte->[LABEL], $i) if defined $targ;
             last;
         } elsif ($mn[$code] eq "jsr") {
             my $targ = addr($i1, $i2);
+            my ($data, $tlabel) = getbyte($state, $targ);
+            push @{$byte->[TARGETS]}, $tlabel if $tlabel;
             trace($state, $targ, $byte->[LABEL], $i);
         } elsif ($mn[$code] =~ /^b(ne|eq|pl|mi|cc|cs|vs|vc)/) {
             my $targ = rel($i, $i1);
+            my ($data, $tlabel) = getbyte($state, $targ);
+            push @{$byte->[TARGETS]}, $tlabel if $tlabel;
             trace($state, $targ, $byte->[LABEL], $i);
         } elsif ($mode =~ /Ind|Z-Page/) {
-            my $data = $mem->[$i1];
-            my $pre = $data->[SEGNUM] ? sprintf "s$data->[SEGNUM]" : "";
-            my $tlabel = $data->[LABEL] ||= $pre . sprintf "l%02X", $i1;
+            my ($data, $tlabel) = getbyte($state, $i1);
             push @{$byte->[TARGETS]}, $tlabel if $tlabel;
             push @{$data->[ACCESSORS]}, seglabel($state, $i);
         } elsif ($mode =~ /Absolute/) {
             my $addr = addr($i1, $i2);
-            my $data = $mem->[$addr];
-            my $pre = $data->[SEGNUM] ? sprintf "s$data->[SEGNUM]" : "";
-            my $tlabel = $data->[LABEL] ||= $pre . sprintf "l%04X", $addr;
+            my ($data, $tlabel) = getbyte($state, $addr);
             push @{$byte->[TARGETS]}, $tlabel if $tlabel;
             push @{$data->[ACCESSORS]}, seglabel($state, $i);
         }
@@ -213,6 +228,7 @@ sub trace {
 }
 
 sub uniq { my %uniq; grep !$uniq{$_}++, @_ }
+sub sortuniq { sort(uniq(@_)) }
 
 sub extern {
     my ($opts, $state) = @_;
@@ -221,17 +237,19 @@ sub extern {
     my @labels;
     for (my $addr = 0; $addr < 0x10000; ++$addr) {
         my $label = $state->{mem}[$addr][LABEL] or next;
-        next if $opts->{labelled}{$label};
-        next if not $opts->{referenced}{$label};
+        if (not $opts->{org}{$addr}) {
+            next if $opts->{labelled}{$label};
+            next if not $opts->{referenced}{$label};
+        }
         next if $label =~ /\+/;
         my $comment = "";
         my $accessors = $state->{mem}[$addr][ACCESSORS];
         if ($accessors and $opts->{access}) {
-            $comment .= "\t\t; " . join " ", "Access:", uniq @$accessors;
+            $comment .= "\t\t; " . join " ", "Access:", sortuniq @$accessors;
         }
         my $callers = $state->{mem}[$addr][CALLERS];
         if ($callers and $opts->{call}) {
-            $comment .= "\t\t; " . join " ", "Callers:", uniq @$callers;
+            $comment .= "\t\t; " . join " ", "Callers:", sortuniq @$callers;
         }
         push @labels, [$addr,
             sprintf "$label equ \$%X$comment\n", $addr];
@@ -241,13 +259,21 @@ sub extern {
 }
 
 sub dump_label {
-    my ($opts, $state, $label, $byte, $off) = @_;
+    my ($opts, $state, $i, $label, $byte, $off) = @_;
     return if not $opts->{labels};
     return if not $label;
     return if $label =~ /\+/;
+    return if $opts->{org}{$i};
     my $callers = $byte->[CALLERS];
     if ($off) {
         printf "$label equ *+$off";
+        if ($opts->{comment}) {
+            my $accessors = $byte->[ACCESSORS];
+            if ($accessors and $opts->{access}) {
+                print "\t\t; Access:";
+                print " $_" for sortuniq @$accessors;
+            }
+        }
     } else {
         print $label;
     }
@@ -255,7 +281,7 @@ sub dump_label {
     print (("\t") x $tabs);
     if ($callers and $opts->{call}) {
         print "; Callers:";
-        print " $_" for uniq @$callers;
+        print " $_" for sortuniq @$callers;
     }
     print "\n";
     $opts->{labelled}{$label}++;
@@ -275,11 +301,11 @@ sub dis {
         my $bitjmp = $value == 0x2C && $mem->[$i+1][CALLERS];
         if (not $bitjmp and $len and $i + $len - 1 <= $end) {
             my ($code, $i1, $i2) = map $mem->[$_][VALUE], $i .. $i+2;
-            dump_label($opts, $state, $label, $byte);
+            dump_label($opts, $state, $i, $label, $byte);
             for (my $a = $i+1; $a < $i+$len; ++$a) {
                 if (my $label = $mem->[$a][LABEL]) {
                     my $off = $a-$i;
-                    dump_label($opts, $state, $label, $mem->[$a], $off);
+                    dump_label($opts, $state, $i, $label, $mem->[$a], $off);
                 }
             }
             printf "    $mn[$code]";
@@ -288,13 +314,16 @@ sub dis {
             my $imm16 = ($i1||0) + (($i2||0)<<8);
             my $rel = rel($i, $i1||0);
             my $ab = $i2 ? "" : "a:";
-            if ($opts->{labels} && $targets && $mode !~ /Indirect|Accum|Implied/) {
+            if ($opts->{labels} && $targets && $mode !~ /Accum|Implied/) {
                 my $targ = $imm8 = $imm16 = $rel = $targets->[-1];
                 $targ =~ s/\+.*//;
                 $opts->{referenced}{$targ}++;
             } elsif ($mode eq "Immediate" and $state->{constant}{$segnum}{$i1}) {
                 $imm8 = $state->{constant}{$segnum}{$i1};
                 $opts->{referenced}{$imm8}++;
+            } elsif ($opts->{labels} && $mode eq "Immediate" and $mem->[$i+1][ADDRESS]) {
+                $rel = $mem->[$i+1][ADDRESS];
+                $mode = "Relative"; # XXX Hack
             } else {
                 $_ = sprintf "\$%02X", $_ for $imm8;
                 $_ = sprintf "\$%04X", $_ for $imm16, $rel;
@@ -318,19 +347,23 @@ sub dis {
                     $i .. ($i+$len-1);
                 if ($accessors and $opts->{access}) {
                     print " Access:";
-                    print " $_" for uniq @$accessors;
+                    print " $_" for sortuniq @$accessors;
                 }
             }
             print "\n";
             $i += $len - 1;
         } else {
-            dump_label($opts, $state, $label, $byte);
-            printf "    dta \$%X", $value;
+            dump_label($opts, $state, $i, $label, $byte);
+            if ($opts->{labels} && $byte->[ADDRESS]) {
+                printf "    dta $byte->[ADDRESS]";
+            } else {
+                printf "    dta \$%X", $value;
+            }
             if ($opts->{comment}) {
                 printf "\t\t; %04X: %02X", $i, $value;
                 if ($accessors and $opts->{access}) {
                     print " Access:";
-                    print " $_" for uniq @$accessors;
+                    print " $_" for sortuniq @$accessors;
                 }
                 print " <--- Data" if exists $state->{data}{$segnum}{$i};
                 print " <--- Bit Jump" if $len and $bitjmp;
@@ -354,6 +387,36 @@ sub enter {
         $label = $label ? "$label=" : "";
         info(sprintf "DATA: $label%04X\n", $data);
         $state->{visited}{$data} = 1;
+    }
+    for my $type (qw(address codeptr)) {
+        for my $address (sort keys %{$state->{$type}{$segnum}}) {
+            my $label = $state->{$type}{$segnum}{$address};
+            my $address_hi;
+            if ($address > 0xFFFF) {
+                # Split address
+                $address_hi = $address >> 16;
+                $address &= 0xFFFF;
+            } else {
+                # Contiguous address
+                $address_hi = $address + 1;
+            }
+            my $from = sprintf "%04X_%04X", $address_hi, $address;
+            my ($i1, $i2) = map $mem->[$_][VALUE], $address, $address_hi;
+            my $taddr = addr($i1, $i2);
+            info(sprintf "ADDRESS: %s,%s = %s\n",
+                seglabel($state, $address_hi),
+                seglabel($state, $address),
+                seglabel($state, $taddr));
+            my $targ = $mem->[$taddr];
+            my $pre = $targ->[SEGNUM] ? sprintf "s$targ->[SEGNUM]" : "";
+            my $tlabel = $targ->[LABEL] ||= $pre . sprintf "l%04X", $taddr;
+            $mem->[$address][ADDRESS] = "<$tlabel";
+            $mem->[$address_hi][ADDRESS] = ">$tlabel";
+            if ($type eq "codeptr") {
+                info(sprintf "CODE: %04X\n", $taddr);
+                trace($state, $taddr, sprintf "-P $from");
+            }
+        }
     }
     while (my ($code, $label) = each %{$state->{code}{$segnum}}) {
         $label = $label ? "$label=" : "";
@@ -437,6 +500,7 @@ sub xex {
         } elsif ($start == 0x2E2) {
             my $ini = unpack "v", $data;
             info(sprintf "INI: %X\n", $ini);
+            my ($byte, $label) = getbyte($state, $ini);
             trace($state, $ini, "ini_segment$state->{segnum}");
         }
         push @segments, [$start, $end, $data, copy($state), $ffff];
@@ -466,7 +530,14 @@ sub xex {
             printf "    ini %s\n", runini($opts, $state, 0x2E2);
         } else {
             my $f = $ffff ? "f:" : "";
-            printf "    org $f\$%04X\t\t; end %04X\n", $start, $end;
+            if ($opts->{orglabels} && (my $label = $state->{mem}[$start][LABEL])) {
+                printf "    org $f$label ; start %04X end %04X\n",
+                    $start, $end;
+                $opts->{org}{$start} = 1;
+            } else {
+                printf "    org $f\$%04X ; start %04X end %04X\n",
+                    $start, $start, $end;
+            }
             dis($state, $start, $end, $opts);
         }
     }
@@ -580,6 +651,7 @@ sub usage {
         "  -d L=XXXX  Data location(s) - Disallow tracing as code\n",
         "  -C L=XXXX  Constant value(s)\n",
         "  -v L=XXXX  Vector(s), e.g. FFFA\n",
+        "  -A L=XXXX  16-bit Address(s)\n",
         "  -o L=XXXX  Origin for raw files\n",
         "  -l         Create labels\n",
         "  -i         Emit illegal opcodes\n",
@@ -608,8 +680,11 @@ sub main {
         data|d=s@
         constant|C=s@
         vector|v=s@
+        address|A=s@
+        codeptr|P=s@
         rangelabels!
         org|o=s
+        orglabels!
         labels|l!
         illegal|i!
         help|h!
@@ -715,7 +790,7 @@ Std Mnemonic Hex Value Description                Addressing Mode  Bytes/Time
 *   ORA      $19       A <- (A) V M               (Absolute,Y)     3/4'1
     NOP      $1A       [no operation]             (Implied)        1/2
     SLO      $1B       M <- (M >> 1) + A + C      (Absolute,Y)     3/7
-    NOP      $1C       [no operation]             (Absolute,X)     2/4'1
+    NOP      $1C       [no operation]             (Absolute,X)     3/4'1
 *   ORA      $1D       A <- (A) V M               (Absolute,X)     3/4'1
 *   ASL      $1E       C <- A7, A <- (A) << 1     (Absolute,X)     3/7
     SLO      $1F       M <- (M >> 1) + A + C      (Absolute,X)     3/7
@@ -762,7 +837,7 @@ Std Mnemonic Hex Value Description                Addressing Mode  Bytes/Time
 *   PHA      $48       Stack <- (A)               (Implied)        1/3
 *   EOR      $49       A <- (A) \-/ M             (Immediate)      2/2
 *   LSR      $4A       C <- A0, A <- (A) >> 1     (Accumulator)    1/2
-    ASR      $4B       A <- [(A /\ M) >> 1]       (Immediate)      1/2
+    ASR      $4B       A <- [(A /\ M) >> 1]       (Immediate)      2/2
 *   JMP      $4C       PC <- Address              (Absolute)       3/3
 *   EOR      $4D       A <- (A) \-/ M             (Absolute)       3/4
 *   LSR      $4E       C <- A0, A <- (A) >> 1     (Absolute)       3/6
