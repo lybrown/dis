@@ -127,6 +127,7 @@ sub rel {
 
 sub addr {
     my ($lo, $hi) = @_;
+    $_ ||= 0 for $lo, $hi;
     return $lo + ($hi<<8);
 }
 
@@ -140,8 +141,10 @@ sub loc {
 
 sub seglabel {
     my ($state, $addr) = @_;
+    my $label = $state->{mem}[$addr][LABEL];
     my $segnum = $state->{mem}[$addr][SEGNUM];
-    return $segnum ? sprintf "${segnum}:%04X", $addr : sprintf "%04X", $addr;
+    return $label ? $label :
+        $segnum ? sprintf "${segnum}:%04X", $addr : sprintf "%04X", $addr;
 }
 
 sub getbyte {
@@ -155,6 +158,7 @@ sub getbyte {
 
 sub trace {
     my ($state, $entry, $callerid, $caller) = @_;
+    my (undef, undef) = getbyte($state, $entry);
     #info(sprintf "; TRACING: %X\n", $entry);
     $state->{traced} = 1;
     my $mem = $state->{mem};
@@ -237,7 +241,7 @@ sub extern {
     my @labels;
     for (my $addr = 0; $addr < 0x10000; ++$addr) {
         my $label = $state->{mem}[$addr][LABEL] or next;
-        if (not $opts->{org}{$addr}) {
+        if (not $opts->{__org}{$addr}) {
             next if $opts->{labelled}{$label};
             next if not $opts->{referenced}{$label};
         }
@@ -263,7 +267,7 @@ sub dump_label {
     return if not $opts->{labels};
     return if not $label;
     return if $label =~ /\+/;
-    return if $opts->{org}{$i};
+    return if $opts->{__org}{$i};
     my $callers = $byte->[CALLERS];
     if ($off) {
         printf "$label equ *+$off";
@@ -500,7 +504,6 @@ sub xex {
         } elsif ($start == 0x2E2) {
             my $ini = unpack "v", $data;
             info(sprintf "INI: %X\n", $ini);
-            my ($byte, $label) = getbyte($state, $ini);
             trace($state, $ini, "ini_segment$state->{segnum}");
         }
         push @segments, [$start, $end, $data, copy($state), $ffff];
@@ -533,7 +536,7 @@ sub xex {
             if ($opts->{orglabels} && (my $label = $state->{mem}[$start][LABEL])) {
                 printf "    org $f$label ; start %04X end %04X\n",
                     $start, $end;
-                $opts->{org}{$start} = 1;
+                $opts->{__org}{$start} = 1;
             } else {
                 printf "    org $f\$%04X ; start %04X end %04X\n",
                     $start, $start, $end;
@@ -645,13 +648,38 @@ sub dump_args {
     }
 }
 
+sub dumpequ {
+    my ($opts, $args) = @_;
+    my %labels;
+    for my $opt (qw(code data vector)) {
+        my $type = $opts->{$opt};
+        if (ref $type) {
+            for my $spec (@$type) {
+                my $label = "l$spec";
+                my $addr = $spec;
+                if ($spec =~ /(.*?)=(.*)/) {
+                    $label = $1;
+                    $addr = $2;
+                }
+                $addr =~ s/^\$//;
+                $addr =~ s/\+.*//;
+                $labels{$label} = $addr;
+            }
+        }
+    }
+    print "$_ equ \$$labels{$_}\n" for
+        sort {(oct "0x$labels{$a}") <=> (oct "0x$labels{$b}")}
+        keys %labels;
+}
+
 sub usage {
     die "Usage: dis [options] file...\n",
         "  -c L=XXXX  Code entry point(s)\n",
         "  -d L=XXXX  Data location(s) - Disallow tracing as code\n",
         "  -C L=XXXX  Constant value(s)\n",
         "  -v L=XXXX  Vector(s), e.g. FFFA\n",
-        "  -A L=XXXX  16-bit Address(s)\n",
+        "  -A L=XXXX  Data address(es)\n",
+        "  -P L=XXXX  Code address(es) - Trace target as code\n",
         "  -o L=XXXX  Origin for raw files\n",
         "  -l         Create labels\n",
         "  -i         Emit illegal opcodes\n",
@@ -667,10 +695,13 @@ sub usage {
         "  -rangelabels Emit labels for ranges instead of base+offset\n",
         "  -verbose   Print info to STDERR\n",
         "  -dump      Print options in format for -a\n",
+        "  -dumpequ   Print equ statements for all labels\n",
+        "  -headers   Print opt h- if disabled with -noheaders\n",
         "  -a FILE    Read options from FILE. Lines are: OPTION VALUE\n",
         "\n",
         "  Addresses may include a range, e.g. table=\$300+F\n",
         "  Addresses may include xex segment number, e.g. 3:1FAE\n",
+        "  Addresses for -A and -P can be HI_LO, e.g. vbiadr=3C64_3C62\n",
         ;
 }
 
@@ -698,14 +729,13 @@ sub main {
         headers!
         verbose!
         dump!
+        dumpequ!
         arg|a=s@
     );
     my %opts = (comment => 1, call => 1, access => 1, extern => 1);
     GetOptions(\%opts, @args) or usage();
 
     usage() if $opts{help};
-    usage() if not @ARGV and -t STDOUT;
-    usage() if @ARGV > 1;
 
     arg(\%opts, \@args, $_) for @{[@{$opts{arg}||[]}]};
 
@@ -713,6 +743,14 @@ sub main {
         dump_args(\%opts, \@args);
         return;
     }
+
+    if ($opts{dumpequ}) {
+        dumpequ(\%opts, \@args);
+        return;
+    }
+
+    usage() if not @ARGV and -t STDIN;
+    usage() if @ARGV > 1;
 
     init($opts{illegal});
 

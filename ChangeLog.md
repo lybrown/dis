@@ -1,3 +1,20 @@
+0.6
+---
+
+- Added -A and -P for specifying indirect data and code addresses
+- Added -dumpequ for just dumping list of equates without disassembly
+- Added -rangelabels to create separate labels for each byte in a range instead
+  of using base+offset
+- Added -extern to include labels for out-of-range addresses
+- Added -noheaders to omit headers with opt h-
+- Added RUNAD and INITAD in sys.dop
+- Added accessors for \*+offset labels
+- Moved extern labels to top of disassembly
+- Fixed SID range in sid.dop
+- Fixed accessor list sorting so comments are consistent across runs
+- Fixed byte count for NOP abs,x ($1C) and ASR imm ($4B)
+- Fixed segment labels in XEX files
+
 0.5
 ---
 
