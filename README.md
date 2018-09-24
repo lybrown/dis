@@ -76,8 +76,8 @@ Disassemble Atari SAP file with option files:
 
     dis -t sap -l -a hardware.dop -a sys.dop A_Type.sap > A_Type.asm
 
-Disassemble XEX and trace through a code vector located in non-consecutive
-hi/lo bytes (for example in LDX/LDY immediate instructions):
+Disassemble XEX and trace through a code at an address which is located in
+non-consecutive hi/lo bytes (for example in LDX/LDY immediate instructions):
 
     dis -P vbiptr=3C64_3C62 game.xex > game.asm
 
@@ -98,10 +98,10 @@ example, -A levelname\_tbl=3F5F+15 might produce the following:
         dta >l5F00          ; 3F64: 5F <--- Data
     ...
 
-The -C option is similar to -A but is used for code addresses. The target
+The -P option is similar to -A but is used for code addresses. The target
 addresses found in the specified bytes are then automatically traced as code.
 
-Both the -A and -C options can accept two addresses separated by an underscore.
+Both the -A and -P options can accept two addresses separated by an underscore.
 This indicates non-consecutive addresses for the high and low bytes of the
 target address, e.g. vbiadr=3C64\_3C62. This can be combined with the range
 syntax to specify a list of addresses where the high and low bytes are in
@@ -146,6 +146,17 @@ Here is an excerpt from an example option file used for disassembling Twilight
 World on the Atari XL/XE:
 
     ; Comments start with a semicolon
+    
+    ; Options
+    labels 1
+    comment 1
+    call 1
+    access 1
+    extern 1
+    arg hardware.dop
+    arg sys.dop
+
+    ; Labels
     code initquest=3BDF
     code resethero=3BFF
     code resetanimations=3C27
